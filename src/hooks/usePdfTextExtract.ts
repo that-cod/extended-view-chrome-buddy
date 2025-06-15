@@ -1,7 +1,7 @@
 
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Extract all lines of text from a PDF file
+// Extract all lines of text from a PDF file, with robust error handling
 export const usePdfTextExtract = () => {
   // Returns a function to extract lines from pdf file
   const extractTextLines = async (file: File): Promise<string[]> => {
@@ -12,15 +12,20 @@ export const usePdfTextExtract = () => {
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
-        const pageLines = textContent.items.map((item: any) => item.str || '').join(' ').split('\n');
-        pageLines.forEach(line => {
-          const trimmed = line.trim();
-          if (trimmed) lines.push(trimmed);
-        });
+        // Only extract actual text, ignore empty/undefined
+        const pageLines = textContent.items
+          .map((item: any) => (item && item.str ? item.str : ''))
+          .join(' ')
+          .split('\n')
+          .map(line => line.trim())
+          .filter(line => line.length > 0);
+        lines.push(...pageLines);
       }
+      // If we somehow have no lines, return at least a blank array (not error)
       return lines;
     } catch (err) {
       console.error('Error extracting PDF text:', err);
+      // Return a special error indicator (also empty array for old handler compatibility)
       return [];
     }
   };

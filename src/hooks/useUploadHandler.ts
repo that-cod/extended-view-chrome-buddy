@@ -58,7 +58,25 @@ export const useUploadHandler = () => {
       if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
         isPDF = true;
         pdfRawText = await extractTextLines(file);
-        if (!pdfRawText || pdfRawText.length === 0) throw new Error('No data found in PDF file');
+
+        // **New Error Handling Here:**
+        if (pdfRawText === undefined || pdfRawText === null) {
+          throw new Error('Could not read any text from PDF file. Please try a different PDF or export.');
+        }
+        // If extracted but zero or nearly zero lines, customized feedback
+        if (pdfRawText.length === 0) {
+          throw new Error(
+            'No readable text found in your PDF. Check if the PDF is a scanned document or try exporting a fresh copy from your broker.'
+          );
+        }
+        // If all are whitespace/empty (should not happen now):
+        if (pdfRawText.every(line => !line.trim())) {
+          throw new Error(
+            'PDF extracted but contains only blank or whitespace lines. Try exporting a new PDF statement from your broker.'
+          );
+        }
+
+        // We always pass raw text (not structured table!) for PDF
         processedData = [{ statementId: statement.id, rawText: pdfRawText.join('\n') }];
       } else {
         processedData = await processCsvFile(file);
@@ -88,7 +106,9 @@ export const useUploadHandler = () => {
           rawText: pdfRawText,
           totalLines: pdfRawText.length,
           insights: [
-            'All text extracted from PDF.',
+            pdfRawText.length >= 1
+              ? `Extracted ${pdfRawText.length} lines of text from your PDF.`
+              : 'All text extracted from PDF.',
             'No structured trade parsing applied. Please analyze lines manually.'
           ]
         };
@@ -102,15 +122,22 @@ export const useUploadHandler = () => {
       toast({
         title: "Upload Successful",
         description: isPDF
-          ? `${file.name} has been uploaded and its text extracted.`
+          ? `${file.name} has been uploaded: ${pdfRawText.length} lines extracted as text.`
           : `${file.name} has been processed. Found ${insertedTrades.length} trades.`,
       });
     } catch (error) {
       setStatus('error');
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to upload and process file');
+      // Use more descriptive error message for PDF and others. Fallback if not Error instance
+      let msg =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+          ? error
+          : 'Failed to upload and process file';
+      setErrorMessage(msg);
       toast({
         title: "Upload Failed",
-        description: error instanceof Error ? error.message : 'Failed to upload and process file',
+        description: msg,
         variant: "destructive",
       });
     }
