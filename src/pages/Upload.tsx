@@ -10,7 +10,7 @@ import { SupabaseService } from '@/services/supabaseService';
 import { supabase } from '@/integrations/supabase/client';
 
 // FIX: Import PDF.js correctly (no default export, use named module)
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf';
+import * as pdfjsLib from 'pdfjs-dist';
 
 const Upload = () => {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
@@ -52,6 +52,7 @@ const Upload = () => {
         fullText += pageText + '\n';
       }
       // "Parse" full text into rows (find lines that look like trades: crude, but lets us try)
+      // Example strategy: split lines, look for rows that contain profit/loss numbers etc
       // Example strategy: split lines, look for rows that contain profit/loss numbers etc
       const lines = fullText.split('\n').map(l => l.trim()).filter(Boolean);
 
