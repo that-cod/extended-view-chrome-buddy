@@ -1,28 +1,11 @@
-
 import { ApiResponse, TradingData } from '@/types/trading';
-import { uploadTradesFile } from './uploadService';
-
-const API_BASE_URL = 'https://server-production-2cd5d.up.railway.app';
-const API_KEY = 'F3B9z2H0Yg8LmW7pXqT6s5nRd4KJc3vS1aQwZuIoPyExMhDtGkVfArCbNeUlSiOj';
+import { SupabaseService } from './supabaseService';
 
 class TradingAPI {
-  private async makeRequest(endpoint: string, options: RequestInit = {}): Promise<ApiResponse> {
+  async getTrades(): Promise<ApiResponse> {
     try {
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        ...options,
-        headers: {
-          'x-api-key': API_KEY,
-          'Content-Type': 'application/json',
-          ...options.headers,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      return { success: true, data };
+      const trades = await SupabaseService.getTrades();
+      return { success: true, data: trades };
     } catch (error) {
       console.error('API request failed:', error);
       return { 
@@ -33,15 +16,15 @@ class TradingAPI {
     }
   }
 
-  async getTrades(): Promise<ApiResponse> {
-    return this.makeRequest('/trades/getTrades');
-  }
-
   async uploadTrades(file: File): Promise<ApiResponse> {
-    // Now uses the uploadService abstraction
-    return uploadTradesFile(file);
+    // This method is now handled by the Upload component directly
+    // but keeping for compatibility
+    return { 
+      success: false, 
+      data: null, 
+      message: 'Use SupabaseService for file uploads' 
+    };
   }
 }
 
 export const tradingAPI = new TradingAPI();
-

@@ -2,29 +2,30 @@
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle } from 'lucide-react';
-import { tradingAPI } from '@/services/api';
+import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle, Download } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useTradingData } from '@/hooks/useTradingData';
 import { useAuth } from '@/contexts/AuthContext';
+import { CSVProcessor } from '@/utils/csvProcessor';
+import { SupabaseService } from '@/services/supabaseService';
+import { supabase } from '@/integrations/supabase/client';
 
 const Upload = () => {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
   const [fileName, setFileName] = useState<string>('');
   const [analysisResults, setAnalysisResults] = useState<any>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [isExporting, setIsExporting] = useState(false);
   const { toast } = useToast();
   const { invalidateData } = useTradingData();
   const { updateUser } = useAuth();
 
   const validateCSVFile = (file: File): boolean => {
-    // Check file type
     if (!file.type.includes('csv') && !file.name.toLowerCase().endsWith('.csv')) {
       setErrorMessage('Please upload a valid CSV file');
       return false;
     }
     
-    // Check file size (max 10MB)
     if (file.size > 10 * 1024 * 1024) {
       setErrorMessage('File size must be less than 10MB');
       return false;
@@ -37,7 +38,6 @@ const Upload = () => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Validate file
     if (!validateCSVFile(file)) {
       setUploadStatus('error');
       return;
@@ -47,28 +47,75 @@ const Upload = () => {
     setUploadStatus('uploading');
     setErrorMessage('');
     
-    console.log('Uploading file:', file.name, 'Size:', file.size, 'Type:', file.type);
+    console.log('Processing file:', file.name, 'Size:', file.size, 'Type:', file.type);
     
     try {
-      const response = await tradingAPI.uploadTrades(file);
-      
-      if (response.success) {
-        setUploadStatus('success');
-        setAnalysisResults(response.data);
-        
-        updateUser({ hasUploadedStatement: true });
-        
-        invalidateData();
-        
-        toast({
-          title: "Upload Successful",
-          description: `${file.name} has been processed and analyzed successfully.`,
-        });
-        
-        console.log('Upload successful:', response.data);
-      } else {
-        throw new Error(response.message || 'Upload failed');
+      // Create uploaded statement record
+      const statement = await SupabaseService.createUploadedStatement(
+        file.name,
+        file.size,
+        file.type
+      );
+
+      if (!statement) {
+        throw new Error('Failed to create statement record');
       }
+
+      await SupabaseService.updateStatementStatus(statement.id, 'processing');
+
+      // Read and process CSV file
+      const csvText = await file.text();
+      console.log('CSV content length:', csvText.length);
+
+      const csvRows = CSVProcessor.parseCSV(csvText);
+      console.log('Parsed CSV rows:', csvRows.length);
+
+      if (csvRows.length === 0) {
+        throw new Error('No valid data found in CSV file');
+      }
+
+      const processedTrades = CSVProcessor.mapToTrades(csvRows);
+      console.log('Processed trades:', processedTrades.length);
+
+      if (processedTrades.length === 0) {
+        throw new Error('No valid trades found in CSV file. Please check the format.');
+      }
+
+      // Insert trades into database
+      const insertedTrades = await SupabaseService.insertTrades(processedTrades, statement.id);
+      
+      if (!insertedTrades) {
+        throw new Error('Failed to save trades to database');
+      }
+
+      // Run analysis using edge function
+      const { data: analysis, error: analysisError } = await supabase.functions.invoke('analyze-trading-data', {
+        body: { statementId: statement.id }
+      });
+
+      if (analysisError) {
+        console.error('Analysis error:', analysisError);
+        // Don't fail the upload if analysis fails
+      }
+
+      await SupabaseService.updateStatementStatus(statement.id, 'completed');
+      
+      setUploadStatus('success');
+      setAnalysisResults(analysis || {
+        totalTrades: insertedTrades.length,
+        winRate: Math.round((insertedTrades.filter(t => t.profit > 0).length / insertedTrades.length) * 100),
+        insights: 'Analysis completed successfully'
+      });
+      
+      updateUser({ hasUploadedStatement: true });
+      invalidateData();
+      
+      toast({
+        title: "Upload Successful",
+        description: `${file.name} has been processed. Found ${insertedTrades.length} trades.`,
+      });
+      
+      console.log('Upload successful. Trades inserted:', insertedTrades.length);
     } catch (error) {
       console.error('Upload error:', error);
       setUploadStatus('error');
@@ -79,6 +126,42 @@ const Upload = () => {
         description: error instanceof Error ? error.message : 'Failed to upload and process file',
         variant: "destructive",
       });
+    }
+  };
+
+  const handleExport = async (format: 'json' | 'csv' = 'json') => {
+    setIsExporting(true);
+    try {
+      const exportData = await SupabaseService.exportData(format);
+      if (!exportData) {
+        throw new Error('No data to export');
+      }
+
+      const blob = new Blob([exportData], { 
+        type: format === 'json' ? 'application/json' : 'text/csv' 
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `trading-data-${new Date().toISOString().split('T')[0]}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: "Export Successful",
+        description: `Your trading data has been exported as ${format.toUpperCase()}.`,
+      });
+    } catch (error) {
+      console.error('Export error:', error);
+      toast({
+        title: "Export Failed",
+        description: error instanceof Error ? error.message : 'Failed to export data',
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -127,7 +210,7 @@ const Upload = () => {
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
                 <div>
                   <h3 className="text-lg font-medium text-white">Processing {fileName}</h3>
-                  <p className="text-gray-400">Uploading and analyzing your trading data...</p>
+                  <p className="text-gray-400">Analyzing your trading data...</p>
                 </div>
               </div>
             )}
@@ -227,12 +310,50 @@ const Upload = () => {
             {analysisResults.insights && (
               <div className="mt-4 p-4 bg-[#1c2027] rounded-lg">
                 <h4 className="text-sm font-semibold text-white mb-2">Key Insights:</h4>
-                <p className="text-sm text-gray-300">{analysisResults.insights}</p>
+                {Array.isArray(analysisResults.insights) ? (
+                  <ul className="text-sm text-gray-300 space-y-1">
+                    {analysisResults.insights.map((insight: string, index: number) => (
+                      <li key={index}>• {insight}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-gray-300">{analysisResults.insights}</p>
+                )}
               </div>
             )}
           </CardContent>
         </Card>
       )}
+
+      <Card className="bg-[#232833] border-gray-700">
+        <CardHeader>
+          <CardTitle className="text-white flex items-center">
+            <Download className="h-5 w-5 mr-2" />
+            Export Data
+          </CardTitle>
+          <CardDescription className="text-gray-400">
+            Export your trading data for external analysis or backup
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-4">
+            <Button 
+              onClick={() => handleExport('json')} 
+              disabled={isExporting}
+              variant="outline"
+            >
+              {isExporting ? 'Exporting...' : 'Export as JSON'}
+            </Button>
+            <Button 
+              onClick={() => handleExport('csv')} 
+              disabled={isExporting}
+              variant="outline"
+            >
+              {isExporting ? 'Exporting...' : 'Export as CSV'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };

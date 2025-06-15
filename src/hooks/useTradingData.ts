@@ -1,6 +1,6 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { tradingAPI } from '@/services/api';
+import { SupabaseService } from '@/services/supabaseService';
 import { processTradeData } from '@/utils/dataProcessor';
 import { TradingData } from '@/types/trading';
 
@@ -15,15 +15,15 @@ export const useTradingData = () => {
   } = useQuery({
     queryKey: ['trading-data'],
     queryFn: async (): Promise<TradingData> => {
-      console.log('Fetching trading data from API...');
-      const response = await tradingAPI.getTrades();
+      console.log('Fetching trading data from Supabase...');
+      const trades = await SupabaseService.getTrades();
       
-      if (!response.success) {
-        throw new Error(response.message || 'Failed to fetch trading data');
+      if (!trades) {
+        throw new Error('Failed to fetch trading data');
       }
       
-      console.log('Raw API response:', response.data);
-      const processedData = processTradeData(response.data || []);
+      console.log('Raw Supabase response:', trades);
+      const processedData = processTradeData(trades);
       console.log('Processed trading data:', processedData);
       
       return processedData;

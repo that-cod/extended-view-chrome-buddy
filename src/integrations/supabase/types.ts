@@ -39,6 +39,142 @@ export type Database = {
         }
         Relationships: []
       }
+      trades: {
+        Row: {
+          action: string
+          confidence: number | null
+          created_at: string | null
+          emotion: string | null
+          id: string
+          notes: string | null
+          price: number
+          profit: number
+          statement_id: string | null
+          symbol: string
+          trade_date: string
+          updated_at: string | null
+          user_id: string
+          volume: number
+        }
+        Insert: {
+          action: string
+          confidence?: number | null
+          created_at?: string | null
+          emotion?: string | null
+          id?: string
+          notes?: string | null
+          price: number
+          profit: number
+          statement_id?: string | null
+          symbol: string
+          trade_date: string
+          updated_at?: string | null
+          user_id: string
+          volume: number
+        }
+        Update: {
+          action?: string
+          confidence?: number | null
+          created_at?: string | null
+          emotion?: string | null
+          id?: string
+          notes?: string | null
+          price?: number
+          profit?: number
+          statement_id?: string | null
+          symbol?: string
+          trade_date?: string
+          updated_at?: string | null
+          user_id?: string
+          volume?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trades_statement_id_fkey"
+            columns: ["statement_id"]
+            isOneToOne: false
+            referencedRelation: "uploaded_statements"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trading_analysis: {
+        Row: {
+          analysis_data: Json
+          analysis_type: string
+          created_at: string | null
+          id: string
+          statement_id: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          analysis_data: Json
+          analysis_type: string
+          created_at?: string | null
+          id?: string
+          statement_id?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          analysis_data?: Json
+          analysis_type?: string
+          created_at?: string | null
+          id?: string
+          statement_id?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trading_analysis_statement_id_fkey"
+            columns: ["statement_id"]
+            isOneToOne: false
+            referencedRelation: "uploaded_statements"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      uploaded_statements: {
+        Row: {
+          created_at: string | null
+          error_message: string | null
+          file_size: number
+          file_type: string
+          filename: string
+          id: string
+          processing_status: string | null
+          updated_at: string | null
+          upload_date: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          error_message?: string | null
+          file_size: number
+          file_type: string
+          filename: string
+          id?: string
+          processing_status?: string | null
+          updated_at?: string | null
+          upload_date?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          error_message?: string | null
+          file_size?: number
+          file_type?: string
+          filename?: string
+          id?: string
+          processing_status?: string | null
+          updated_at?: string | null
+          upload_date?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
