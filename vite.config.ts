@@ -1,3 +1,4 @@
+
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
@@ -19,13 +20,15 @@ export default defineConfig(({ mode }) => ({
     },
   },
   optimizeDeps: {
-    include: ["pdfjs-dist/build/pdf.worker.js"],
+    // Change to match correct worker for pdfjs-dist@4.x+
+    include: ["pdfjs-dist/build/pdf.worker.mjs"],
   },
   build: {
     rollupOptions: {
       output: {
         manualChunks: {
-          "pdfjs-worker": ["pdfjs-dist/build/pdf.worker.js"],
+          // Update for correct worker entry file
+          "pdfjs-worker": ["pdfjs-dist/build/pdf.worker.mjs"],
         },
       },
     },
