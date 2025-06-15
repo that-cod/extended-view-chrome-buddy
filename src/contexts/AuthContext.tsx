@@ -114,8 +114,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!mounted) return;
 
       if (session?.user) {
-        // Wait a bit for the profile to be created by the trigger
-        if (event === 'SIGNED_UP') {
+        // Wait a bit for the profile to be created by the trigger for new signups
+        if (event === 'SIGNED_IN' && session.user.created_at === session.user.updated_at) {
+          // This is likely a new signup, wait for profile creation
           setTimeout(async () => {
             const profile = await fetchProfile(session.user.id);
             if (mounted) {
