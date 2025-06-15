@@ -43,9 +43,13 @@ export class SupabaseService {
     fileType: string
   ): Promise<UploadedStatement | null> {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
       const { data, error } = await supabase
         .from('uploaded_statements')
         .insert({
+          user_id: user.id,
           filename,
           file_size: fileSize,
           file_type: fileType,
@@ -59,7 +63,7 @@ export class SupabaseService {
         throw error;
       }
 
-      return data;
+      return data as UploadedStatement;
     } catch (error) {
       console.error('Error in createUploadedStatement:', error);
       return null;
@@ -120,7 +124,7 @@ export class SupabaseService {
         throw error;
       }
 
-      return data;
+      return data as Trade[];
     } catch (error) {
       console.error('Error in insertTrades:', error);
       return null;
@@ -139,7 +143,7 @@ export class SupabaseService {
         throw error;
       }
 
-      return data;
+      return data as Trade[];
     } catch (error) {
       console.error('Error in getTrades:', error);
       return null;
@@ -158,7 +162,7 @@ export class SupabaseService {
         throw error;
       }
 
-      return data;
+      return data as UploadedStatement[];
     } catch (error) {
       console.error('Error in getUploadedStatements:', error);
       return null;
