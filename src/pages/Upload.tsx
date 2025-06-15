@@ -1,34 +1,62 @@
-
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle } from 'lucide-react';
+import { tradingAPI } from '@/services/api';
+import { useToast } from '@/hooks/use-toast';
+import { useTradingData } from '@/hooks/useTradingData';
 
 const Upload = () => {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
   const [fileName, setFileName] = useState<string>('');
+  const [analysisResults, setAnalysisResults] = useState<any>(null);
+  const { toast } = useToast();
+  const { invalidateData } = useTradingData();
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      setFileName(file.name);
-      setUploadStatus('uploading');
+    if (!file) return;
+
+    setFileName(file.name);
+    setUploadStatus('uploading');
+    
+    console.log('Uploading file:', file.name);
+    
+    try {
+      const response = await tradingAPI.uploadTrades(file);
       
-      // Simulate upload process
-      setTimeout(() => {
-        if (file.name.endsWith('.csv')) {
-          setUploadStatus('success');
-          console.log('CSV file processed successfully');
-        } else {
-          setUploadStatus('error');
-        }
-      }, 2000);
+      if (response.success) {
+        setUploadStatus('success');
+        setAnalysisResults(response.data);
+        
+        // Invalidate trading data to refresh dashboard
+        invalidateData();
+        
+        toast({
+          title: "Upload Successful",
+          description: `${file.name} has been processed and analyzed successfully.`,
+        });
+        
+        console.log('Upload successful:', response.data);
+      } else {
+        throw new Error(response.message || 'Upload failed');
+      }
+    } catch (error) {
+      console.error('Upload error:', error);
+      setUploadStatus('error');
+      
+      toast({
+        title: "Upload Failed",
+        description: error instanceof Error ? error.message : 'Failed to upload and process file',
+        variant: "destructive",
+      });
     }
   };
 
   const resetUpload = () => {
     setUploadStatus('idle');
     setFileName('');
+    setAnalysisResults(null);
   };
 
   return (
@@ -68,7 +96,7 @@ const Upload = () => {
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
                 <div>
                   <h3 className="text-lg font-medium text-white">Processing {fileName}</h3>
-                  <p className="text-gray-400">Analyzing your trading data...</p>
+                  <p className="text-gray-400">Uploading and analyzing your trading data...</p>
                 </div>
               </div>
             )}
@@ -92,7 +120,7 @@ const Upload = () => {
                 <AlertCircle className="mx-auto h-12 w-12 text-red-500" />
                 <div>
                   <h3 className="text-lg font-medium text-white">Upload Failed</h3>
-                  <p className="text-gray-400">Please ensure you're uploading a valid CSV file</p>
+                  <p className="text-gray-400">Please ensure you're uploading a valid CSV file or check your connection</p>
                   <p className="text-sm text-red-400 mt-2">{fileName}</p>
                 </div>
                 <Button onClick={resetUpload} variant="outline" className="mt-4">
@@ -138,7 +166,7 @@ const Upload = () => {
         </CardContent>
       </Card>
 
-      {uploadStatus === 'success' && (
+      {uploadStatus === 'success' && analysisResults && (
         <Card className="bg-[#232833] border-gray-700">
           <CardHeader>
             <CardTitle className="text-white">Analysis Results</CardTitle>
@@ -146,18 +174,31 @@ const Upload = () => {
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="text-center">
-                <div className="text-2xl font-bold text-white">127</div>
+                <div className="text-2xl font-bold text-white">
+                  {analysisResults.totalTrades || 'N/A'}
+                </div>
                 <div className="text-sm text-gray-400">Total Trades</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-green-400">64%</div>
+                <div className="text-2xl font-bold text-green-400">
+                  {analysisResults.winRate ? `${Math.round(analysisResults.winRate)}%` : 'N/A'}
+                </div>
                 <div className="text-sm text-gray-400">Win Rate</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-blue-400">23</div>
+                <div className="text-2xl font-bold text-blue-400">
+                  {analysisResults.emotionalPatterns || 'N/A'}
+                </div>
                 <div className="text-sm text-gray-400">Emotional Patterns Detected</div>
               </div>
             </div>
+            
+            {analysisResults.insights && (
+              <div className="mt-4 p-4 bg-[#1c2027] rounded-lg">
+                <h4 className="text-sm font-semibold text-white mb-2">Key Insights:</h4>
+                <p className="text-sm text-gray-300">{analysisResults.insights}</p>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
