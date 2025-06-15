@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { CSVProcessor } from '@/utils/csvProcessor';
 import { SupabaseService } from '@/services/supabaseService';
 import { supabase } from '@/integrations/supabase/client';
+import pdfjsLib from 'pdfjs-dist';
 
 const Upload = () => {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
@@ -20,25 +20,73 @@ const Upload = () => {
   const { invalidateData } = useTradingData();
   const { updateUser } = useAuth();
 
-  const validateCSVFile = (file: File): boolean => {
-    if (!file.type.includes('csv') && !file.name.toLowerCase().endsWith('.csv')) {
-      setErrorMessage('Please upload a valid CSV file');
+  // Updated validation: Accept CSV or PDF files
+  const validateFile = (file: File): boolean => {
+    const isCSV = file.type.includes('csv') || file.name.toLowerCase().endsWith('.csv');
+    const isPDF = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    if (!isCSV && !isPDF) {
+      setErrorMessage('Please upload a valid CSV or PDF file');
       return false;
     }
-    
     if (file.size > 10 * 1024 * 1024) {
       setErrorMessage('File size must be less than 10MB');
       return false;
     }
-    
     return true;
   };
 
+  // Helper function to parse PDF trade statements (best effort: assumes tabular data is present in text)
+  const parsePDFFile = async (file: File): Promise<any[]> => {
+    try {
+      // Read PDF as ArrayBuffer
+      const arrayBuffer = await file.arrayBuffer();
+      // Initialize PDF.js
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let fullText = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map((item: any) => item.str).join(' ');
+        fullText += pageText + '\n';
+      }
+      // "Parse" full text into rows (find lines that look like trades: crude, but lets us try)
+      // Example strategy: split lines, look for rows that contain profit/loss numbers etc
+      const lines = fullText.split('\n').map(l => l.trim()).filter(Boolean);
+
+      // Try to find header row (first row with certain keywords), then collect all "rows" after
+      let headerIdx = lines.findIndex(line => 
+        /date|symbol|instrument|buy|sell|profit|volume|qty|quantity/i.test(line)
+      );
+      let headers: string[] = [];
+      if (headerIdx !== -1) {
+        headers = lines[headerIdx].split(/\s{2,}|\t|,/).map(h => h.trim());
+      }
+      // Extract rows after header
+      let tableData: any[] = [];
+      if (headerIdx !== -1 && headers.length >= 3) {
+        for (let i = headerIdx + 1; i < lines.length; i++) {
+          const cells = lines[i].split(/\s{2,}|\t|,/).map(c => c.trim());
+          if (cells.length < headers.length) continue;
+          const row: any = {};
+          headers.forEach((h, idx) => { row[h.toLowerCase()] = cells[idx] || ''; });
+          tableData.push(row);
+        }
+      }
+      // Best effort: if nothing found, return []
+      return tableData;
+    } catch (err) {
+      console.error('Error parsing PDF:', err);
+      setErrorMessage('Failed to extract data from PDF file. Please check PDF format.');
+      return [];
+    }
+  };
+
+  // Modified file upload handler to support both CSV and PDF
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (!validateCSVFile(file)) {
+    if (!validateFile(file)) {
       setUploadStatus('error');
       return;
     }
@@ -46,9 +94,11 @@ const Upload = () => {
     setFileName(file.name);
     setUploadStatus('uploading');
     setErrorMessage('');
-    
+
     console.log('Processing file:', file.name, 'Size:', file.size, 'Type:', file.type);
-    
+
+    let processedTrades: any[] = [];
+    let isPDF = false;
     try {
       // Create uploaded statement record
       const statement = await SupabaseService.createUploadedStatement(
@@ -57,36 +107,50 @@ const Upload = () => {
         file.type
       );
 
-      if (!statement) {
-        throw new Error('Failed to create statement record');
-      }
+      if (!statement) throw new Error('Failed to create statement record');
 
       await SupabaseService.updateStatementStatus(statement.id, 'processing');
 
-      // Read and process CSV file
-      const csvText = await file.text();
-      console.log('CSV content length:', csvText.length);
+      // Read and process file
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        isPDF = true;
+        const tableData = await parsePDFFile(file);
+        if (!tableData || tableData.length === 0) throw new Error('No valid data found in PDF file');
+        
+        // PDF trade mapping (attempt to map tableData fields to "trade" shape)
+        // As in CSVProcessor.mapToTrades, map to the fields required by your schema.
+        processedTrades = tableData.map(row => {
+          // Try to guess the fields based on column headers
+          return {
+            date: row['date'] || row['date/time'] || row['datetime'],
+            symbol: row['symbol'] || row['instrument'],
+            action: (row['action'] || row['type'] || row['buy/sell'] || '').toLowerCase().includes('buy') ? 'buy' : 'sell',
+            volume: parseFloat(row['volume'] || row['qty'] || row['quantity'] || '0'),
+            price: parseFloat(row['price'] || row['open'] || '0'),
+            profit: parseFloat(row['profit'] || row['p/l'] || row['net'] || '0')
+          };
+        }).filter(t => t.date && t.symbol && t.action && !isNaN(t.volume) && !isNaN(t.price) && !isNaN(t.profit));
+      } else {
+        // CSV flow (original)
+        const csvText = await file.text();
+        console.log('CSV content length:', csvText.length);
 
-      const csvRows = CSVProcessor.parseCSV(csvText);
-      console.log('Parsed CSV rows:', csvRows.length);
+        const csvRows = CSVProcessor.parseCSV(csvText);
+        if (csvRows.length === 0) throw new Error('No valid data found in CSV file');
 
-      if (csvRows.length === 0) {
-        throw new Error('No valid data found in CSV file');
+        processedTrades = CSVProcessor.mapToTrades(csvRows);
       }
 
-      const processedTrades = CSVProcessor.mapToTrades(csvRows);
       console.log('Processed trades:', processedTrades.length);
 
       if (processedTrades.length === 0) {
-        throw new Error('No valid trades found in CSV file. Please check the format.');
+        throw new Error('No valid trades found in file. Please check the format.');
       }
 
       // Insert trades into database
       const insertedTrades = await SupabaseService.insertTrades(processedTrades, statement.id);
-      
-      if (!insertedTrades) {
-        throw new Error('Failed to save trades to database');
-      }
+
+      if (!insertedTrades) throw new Error('Failed to save trades to database');
 
       // Run analysis using edge function
       const { data: analysis, error: analysisError } = await supabase.functions.invoke('analyze-trading-data', {
@@ -99,28 +163,27 @@ const Upload = () => {
       }
 
       await SupabaseService.updateStatementStatus(statement.id, 'completed');
-      
+
       setUploadStatus('success');
       setAnalysisResults(analysis || {
         totalTrades: insertedTrades.length,
         winRate: Math.round((insertedTrades.filter(t => t.profit > 0).length / insertedTrades.length) * 100),
         insights: 'Analysis completed successfully'
       });
-      
+
       updateUser({ hasUploadedStatement: true });
       invalidateData();
-      
+
       toast({
         title: "Upload Successful",
         description: `${file.name} has been processed. Found ${insertedTrades.length} trades.`,
       });
-      
+
       console.log('Upload successful. Trades inserted:', insertedTrades.length);
     } catch (error) {
       console.error('Upload error:', error);
       setUploadStatus('error');
       setErrorMessage(error instanceof Error ? error.message : 'Failed to upload and process file');
-      
       toast({
         title: "Upload Failed",
         description: error instanceof Error ? error.message : 'Failed to upload and process file',
@@ -176,14 +239,14 @@ const Upload = () => {
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="text-center mb-8">
         <h1 className="text-3xl font-bold mb-2">Upload Trading Statement</h1>
-        <p className="text-gray-400">Upload your CSV trading statement for behavioral analysis</p>
+        <p className="text-gray-400">Upload your CSV or PDF trading statement for behavioral analysis</p>
       </div>
 
       <Card className="bg-[#232833] border-gray-700">
         <CardHeader>
-          <CardTitle className="text-white">CSV Trading Statement Upload</CardTitle>
+          <CardTitle className="text-white">CSV or PDF Trading Statement Upload</CardTitle>
           <CardDescription className="text-gray-400">
-            Upload your trading history as a CSV file. We support most broker formats including MT4, MT5, Interactive Brokers, and more.
+            Upload your trading history as a <span className="font-semibold">CSV</span> <b>or</b> <span className="font-semibold">PDF</span> file. We support most broker formats including MT4, MT5, Interactive Brokers, and more.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -192,13 +255,13 @@ const Upload = () => {
               <>
                 <UploadIcon className="mx-auto h-12 w-12 text-gray-400 mb-4" />
                 <div className="space-y-2">
-                  <h3 className="text-lg font-medium text-white">Drop your CSV file here</h3>
+                  <h3 className="text-lg font-medium text-white">Drop your CSV or PDF file here</h3>
                   <p className="text-gray-400">or click to browse</p>
                   <p className="text-sm text-gray-500">Maximum file size: 10MB</p>
                 </div>
                 <input
                   type="file"
-                  accept=".csv,text/csv"
+                  accept=".csv,application/pdf,.pdf,text/csv"
                   onChange={handleFileUpload}
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                 />
@@ -234,7 +297,7 @@ const Upload = () => {
                 <AlertCircle className="mx-auto h-12 w-12 text-red-500" />
                 <div>
                   <h3 className="text-lg font-medium text-white">Upload Failed</h3>
-                  <p className="text-gray-400">{errorMessage || 'Please ensure you\'re uploading a valid CSV file'}</p>
+                  <p className="text-gray-400">{errorMessage || 'Please ensure you\'re uploading a valid CSV or PDF file'}</p>
                   <p className="text-sm text-red-400 mt-2">{fileName}</p>
                 </div>
                 <Button onClick={resetUpload} variant="outline" className="mt-4">
@@ -255,9 +318,10 @@ const Upload = () => {
               <CardContent className="pt-0">
                 <ul className="text-sm text-gray-400 space-y-1">
                   <li>• MetaTrader 4/5 CSV exports</li>
-                  <li>• Interactive Brokers statements</li>
+                  <li>• Interactive Brokers statements (CSV or PDF)</li>
                   <li>• TradingView export data</li>
                   <li>• Custom CSV with standard columns</li>
+                  <li>• PDF files with tabular trade history (experimental)</li>
                 </ul>
               </CardContent>
             </Card>
