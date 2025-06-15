@@ -43,7 +43,7 @@ class TradingAPI {
       
       console.log('Uploading file:', file.name, 'Size:', file.size, 'Type:', file.type);
       
-      const response = await fetch(`${API_BASE_URL}/trades/upload`, {
+      const response = await fetch(`${API_BASE_URL}/trades/uploadTrades`, {
         method: 'POST',
         headers: {
           'x-api-key': API_KEY,
