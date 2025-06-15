@@ -1,5 +1,12 @@
-
 import * as pdfjsLib from 'pdfjs-dist';
+
+// Set up workerSrc for PDF.js in Vite context
+if ((window as any).Worker) {
+  // @ts-ignore
+  pdfjsLib.GlobalWorkerOptions.workerSrc = import.meta.env.BASE_URL
+    ? `${import.meta.env.BASE_URL}pdf.worker.js`
+    : '/pdf.worker.js';
+}
 
 // Extract all lines of text from a PDF file, with robust error handling
 export const usePdfTextExtract = () => {

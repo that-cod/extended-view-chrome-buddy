@@ -6,6 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { usePdfTextExtract } from './usePdfTextExtract';
 import { useCsvProcessing } from './useCsvProcessing';
 import { useState } from 'react';
+import { z } from "zod";
 
 type UploadStatus = 'idle' | 'uploading' | 'success' | 'error';
 
@@ -23,17 +24,62 @@ export const useUploadHandler = () => {
   const { extractTextLines } = usePdfTextExtract();
   const { processCsvFile } = useCsvProcessing();
 
-  // Validation (unchanged)
+  // Enhanced file validation schema
+  const AllowedMimeTypes = [
+    "text/csv",
+    "application/pdf",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  ];
+  const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+  // Validation
   const validateFile = (file: File): boolean => {
-    const isCSV = file.type.includes('csv') || file.name.toLowerCase().endsWith('.csv');
-    const isPDF = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-    if (!isCSV && !isPDF) {
-      setErrorMessage('Please upload a valid CSV or PDF file');
+    const schema = z.object({
+      name: z.string().min(1),
+      size: z.number().max(MAX_FILE_SIZE),
+      type: z.string().refine(
+        (val) =>
+          AllowedMimeTypes.includes(val) ||
+          file.name.toLowerCase().endsWith(".csv") ||
+          file.name.toLowerCase().endsWith(".pdf"),
+        { message: "File must be a CSV or PDF." }
+      ),
+    });
+
+    const result = schema.safeParse({
+      name: file.name,
+      size: file.size,
+      type: file.type,
+    });
+
+    if (!result.success) {
+      setErrorMessage(
+        result.error.errors[0]?.message || "Please upload a valid CSV or PDF file"
+      );
       return false;
     }
-    if (file.size > 10 * 1024 * 1024) {
-      setErrorMessage('File size must be less than 10MB');
+
+    if (file.size > MAX_FILE_SIZE) {
+      setErrorMessage("File size must be less than 10MB");
       return false;
+    }
+
+    // Check CSV file extra: ensure it has minimum required lines (header + 1 data row) if possible
+    if (
+      (file.type.includes("csv") || file.name.toLowerCase().endsWith(".csv")) &&
+      typeof FileReader !== "undefined"
+    ) {
+      const reader = new FileReader();
+      reader.onload = (e: any) => {
+        const text = e.target.result as string;
+        const lines = text.split("\n").filter((l) => l.trim() !== "");
+        if (lines.length < 2) {
+          setErrorMessage("CSV file must contain at least one data row.");
+          setStatus("error");
+        }
+      };
+      reader.readAsText(file);
     }
     return true;
   };
@@ -143,7 +189,7 @@ export const useUploadHandler = () => {
     }
   };
 
-  // Export logic (unchanged)
+  // Export logic
   const handleExport = async (format: 'json' | 'csv' = 'json') => {
     setIsExporting(true);
     try {

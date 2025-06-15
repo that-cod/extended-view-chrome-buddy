@@ -11,12 +11,23 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     react(),
-    mode === 'development' &&
-    componentTagger(),
+    mode === "development" && componentTagger(),
   ].filter(Boolean),
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+    },
+  },
+  optimizeDeps: {
+    include: ["pdfjs-dist/build/pdf.worker.js"],
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "pdfjs-worker": ["pdfjs-dist/build/pdf.worker.js"],
+        },
+      },
     },
   },
 }));

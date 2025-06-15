@@ -17,6 +17,7 @@ interface UserProfile {
 export const useAuthState = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   // Fetch the user's profile, create if missing
   const fetchAndEnsureProfile = async (userId: string, email: string): Promise<UserProfile | null> => {
@@ -55,7 +56,8 @@ export const useAuthState = () => {
         hasCompletedQuestionnaire: data.has_completed_questionnaire,
         hasUploadedStatement: data.has_uploaded_statement,
       };
-    } catch {
+    } catch (err) {
+      setAuthError("Failed to fetch user profile. Please try again.");
       return null;
     }
   };
@@ -63,6 +65,7 @@ export const useAuthState = () => {
   useEffect(() => {
     let mounted = true;
     let loadingFinished = false;
+    let timeoutHandle: any;
 
     const finishLoading = () => {
       if (!loadingFinished) {
@@ -81,8 +84,9 @@ export const useAuthState = () => {
         } else if (mounted) {
           setUser(null);
         }
-      } catch {
+      } catch (error) {
         if (mounted) setUser(null);
+        setAuthError("Authentication failed. Please check your network connection and try again.");
       } finally {
         finishLoading();
       }
@@ -99,6 +103,7 @@ export const useAuthState = () => {
             if (mounted) setUser(profile);
           } catch {
             if (mounted) setUser(null);
+            setAuthError("Failed to fetch user profile on auth state change.");
           } finally {
             finishLoading();
           }
@@ -111,15 +116,18 @@ export const useAuthState = () => {
 
     initialize();
 
-    // Always force timeout if stuck for 8 seconds
-    const failSafe = setTimeout(() => {
-      finishLoading();
-    }, 8000);
+    // Reduce timeout to 5 seconds, show error and allow retry if needed
+    timeoutHandle = setTimeout(() => {
+      if (isLoading) {
+        setAuthError("Authentication is taking longer than expected. Please refresh or try again.");
+        finishLoading();
+      }
+    }, 5000);
 
     return () => {
       mounted = false;
       subscription.unsubscribe();
-      clearTimeout(failSafe);
+      clearTimeout(timeoutHandle);
     };
   }, []); // <- Ensures the effect runs ONCE ONLY
 
@@ -151,5 +159,5 @@ export const useAuthState = () => {
     setUser(updatedUser);
   };
 
-  return { user, setUser, isLoading, setIsLoading, updateUser };
+  return { user, setUser, isLoading, setIsLoading, updateUser, authError };
 };
