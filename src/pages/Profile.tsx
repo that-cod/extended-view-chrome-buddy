@@ -6,12 +6,15 @@ import { Badge } from "@/components/ui/badge";
 import { User, LogOut, Trash2, Settings as SettingsIcon } from 'lucide-react';
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from '@/integrations/supabase/client';
+import { useNavigate } from "react-router-dom";
 
 const Profile = () => {
   const { user, logout } = useAuth();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [lastUpload, setLastUpload] = useState<string | null>(null);
+
+  const navigate = useNavigate();
 
   // Fetch last upload date from uploaded_statements
   React.useEffect(() => {
@@ -110,7 +113,7 @@ const Profile = () => {
               </div>
             </div>
             <div className="flex flex-col space-y-3">
-              <Button variant="outline" onClick={() => window.location.href = "/questionnaire"}>
+              <Button variant="outline" onClick={() => navigate("/questionnaire")}>
                 Update Questionnaire
               </Button>
               <Button variant="outline" className="border-red-700 text-red-400 hover:bg-red-900/20" onClick={() => setShowDeleteDialog(true)}>
@@ -272,7 +275,7 @@ const Profile = () => {
 
       <div className="text-center">
         <Button 
-          onClick={() => {window.location.href = "/questionnaire"}}
+          onClick={() => navigate("/questionnaire")}
           variant="outline"
           className="mr-4"
         >
