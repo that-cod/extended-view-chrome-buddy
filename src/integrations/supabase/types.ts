@@ -39,6 +39,84 @@ export type Database = {
         }
         Relationships: []
       }
+      questionnaire_responses: {
+        Row: {
+          age: string | null
+          created_at: string
+          current_platforms: string | null
+          data_concerns: string | null
+          emotion_management: string[] | null
+          emotional_challenges: string[] | null
+          emotional_impact: number | null
+          experience: string | null
+          helpful_features: string[] | null
+          id: string
+          markets: string[] | null
+          name: string | null
+          portfolio_size: string | null
+          sex: string | null
+          stop_loss_decision: string | null
+          success_definition: string | null
+          trader_type: string | null
+          trading_goals: string[] | null
+          trading_stress: string | null
+          updated_at: string
+          use_journaling: string | null
+          user_id: string
+          willingness_to_pay: string | null
+        }
+        Insert: {
+          age?: string | null
+          created_at?: string
+          current_platforms?: string | null
+          data_concerns?: string | null
+          emotion_management?: string[] | null
+          emotional_challenges?: string[] | null
+          emotional_impact?: number | null
+          experience?: string | null
+          helpful_features?: string[] | null
+          id?: string
+          markets?: string[] | null
+          name?: string | null
+          portfolio_size?: string | null
+          sex?: string | null
+          stop_loss_decision?: string | null
+          success_definition?: string | null
+          trader_type?: string | null
+          trading_goals?: string[] | null
+          trading_stress?: string | null
+          updated_at?: string
+          use_journaling?: string | null
+          user_id: string
+          willingness_to_pay?: string | null
+        }
+        Update: {
+          age?: string | null
+          created_at?: string
+          current_platforms?: string | null
+          data_concerns?: string | null
+          emotion_management?: string[] | null
+          emotional_challenges?: string[] | null
+          emotional_impact?: number | null
+          experience?: string | null
+          helpful_features?: string[] | null
+          id?: string
+          markets?: string[] | null
+          name?: string | null
+          portfolio_size?: string | null
+          sex?: string | null
+          stop_loss_decision?: string | null
+          success_definition?: string | null
+          trader_type?: string | null
+          trading_goals?: string[] | null
+          trading_stress?: string | null
+          updated_at?: string
+          use_journaling?: string | null
+          user_id?: string
+          willingness_to_pay?: string | null
+        }
+        Relationships: []
+      }
       trades: {
         Row: {
           action: string

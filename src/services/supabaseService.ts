@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { ProcessedTrade } from '@/utils/csvProcessor';
 
@@ -43,8 +42,21 @@ export class SupabaseService {
     fileType: string
   ): Promise<UploadedStatement | null> {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
+      console.log('Creating uploaded statement record...');
+      
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError) {
+        console.error('Authentication error:', userError);
+        throw new Error('User not authenticated. Please log in and try again.');
+      }
+      
+      if (!user) {
+        console.error('No user found in session');
+        throw new Error('User not authenticated. Please log in and try again.');
+      }
+
+      console.log('User authenticated:', user.id);
 
       const { data, error } = await supabase
         .from('uploaded_statements')
@@ -59,14 +71,18 @@ export class SupabaseService {
         .single();
 
       if (error) {
-        console.error('Error creating uploaded statement:', error);
-        throw error;
+        console.error('Database error creating uploaded statement:', error);
+        throw new Error(`Failed to create statement record: ${error.message}`);
       }
 
+      console.log('Statement record created successfully:', data);
       return data as UploadedStatement;
     } catch (error) {
       console.error('Error in createUploadedStatement:', error);
-      return null;
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Failed to create uploaded statement record');
     }
   }
 
@@ -76,6 +92,8 @@ export class SupabaseService {
     errorMessage?: string
   ): Promise<boolean> {
     try {
+      console.log(`Updating statement ${statementId} status to:`, status);
+      
       const { error } = await supabase
         .from('uploaded_statements')
         .update({
@@ -89,6 +107,7 @@ export class SupabaseService {
         throw error;
       }
 
+      console.log('Statement status updated successfully');
       return true;
     } catch (error) {
       console.error('Error in updateStatementStatus:', error);
@@ -98,8 +117,14 @@ export class SupabaseService {
 
   static async insertTrades(trades: ProcessedTrade[], statementId?: string): Promise<Trade[] | null> {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
+      console.log('Inserting trades to database...');
+      
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError || !user) {
+        console.error('Authentication error:', userError);
+        throw new Error('User not authenticated');
+      }
 
       const tradesData = trades.map(trade => ({
         user_id: user.id,
@@ -124,6 +149,7 @@ export class SupabaseService {
         throw error;
       }
 
+      console.log(`Successfully inserted ${data.length} trades`);
       return data as Trade[];
     } catch (error) {
       console.error('Error in insertTrades:', error);

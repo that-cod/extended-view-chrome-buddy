@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -10,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
+import { QuestionnaireService, QuestionnaireData } from '@/services/questionnaireService';
 
 interface QuestionnaireData {
   // Personal Info
@@ -43,7 +43,8 @@ interface QuestionnaireData {
 const Questionnaire = () => {
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { updateUser } = useAuth();
+  const [isLoading, setIsLoading] = useState(true);
+  const { updateUser, user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
   
@@ -72,6 +73,25 @@ const Questionnaire = () => {
   const totalSteps = 5;
   const progress = ((currentStep + 1) / totalSteps) * 100;
 
+  // Load existing questionnaire data if user has completed it
+  useEffect(() => {
+    const loadExistingData = async () => {
+      if (user?.hasCompletedQuestionnaire) {
+        console.log('User has completed questionnaire, loading existing data...');
+        const existingData = await QuestionnaireService.getQuestionnaireResponse();
+        if (existingData) {
+          setFormData(existingData);
+          console.log('Loaded existing questionnaire data:', existingData);
+        }
+      }
+      setIsLoading(false);
+    };
+
+    if (user) {
+      loadExistingData();
+    }
+  }, [user]);
+
   const handleArrayToggle = (field: keyof QuestionnaireData, value: string) => {
     setFormData(prev => ({
       ...prev,
@@ -84,20 +104,27 @@ const Questionnaire = () => {
   const handleSubmit = async () => {
     setIsSubmitting(true);
     try {
-      // Save questionnaire data (in real app, send to backend)
-      console.log('Questionnaire completed:', formData);
+      console.log('Submitting questionnaire:', formData);
       
-      // Update user to mark questionnaire as completed
-      updateUser({ hasCompletedQuestionnaire: true, name: formData.name });
+      // Save questionnaire data to database
+      const success = await QuestionnaireService.saveQuestionnaireResponse(formData);
+      
+      if (!success) {
+        throw new Error('Failed to save questionnaire data');
+      }
+      
+      // Update user profile to mark questionnaire as completed
+      await updateUser({ hasCompletedQuestionnaire: true, name: formData.name });
       
       toast({
         title: "Profile Complete!",
-        description: "Now let's upload your trading statement for analysis.",
+        description: "Your questionnaire has been saved. Now let's upload your trading statement for analysis.",
       });
       
       // Redirect to upload page
       navigate('/upload');
     } catch (error) {
+      console.error('Error submitting questionnaire:', error);
       toast({
         title: "Error",
         description: "Failed to save questionnaire. Please try again.",
@@ -108,6 +135,7 @@ const Questionnaire = () => {
     }
   };
 
+  // ... keep existing code (canProceed function)
   const canProceed = () => {
     switch (currentStep) {
       case 0:
@@ -125,6 +153,7 @@ const Questionnaire = () => {
     }
   };
 
+  // ... keep existing code (renderStep function - all 5 cases remain the same)
   const renderStep = () => {
     switch (currentStep) {
       case 0:
@@ -494,12 +523,25 @@ const Questionnaire = () => {
     }
   };
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#171b22] p-4 flex items-center justify-center">
+        <div className="text-white">Loading questionnaire...</div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#171b22] p-4">
       <div className="max-w-2xl mx-auto space-y-6">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">Trading Profile Setup</h1>
           <p className="text-gray-400">Help us understand your trading psychology</p>
+          {user?.hasCompletedQuestionnaire && (
+            <Badge variant="secondary" className="mt-2">
+              Previously Completed - You can update your responses
+            </Badge>
+          )}
         </div>
 
         <Card className="bg-[#232833] border-gray-700">
@@ -528,7 +570,7 @@ const Questionnaire = () => {
                   disabled={!canProceed() || isSubmitting}
                   className="bg-green-600 hover:bg-green-700"
                 >
-                  {isSubmitting ? 'Completing...' : 'Complete Setup'}
+                  {isSubmitting ? 'Saving...' : user?.hasCompletedQuestionnaire ? 'Update Profile' : 'Complete Setup'}
                 </Button>
               ) : (
                 <Button 
