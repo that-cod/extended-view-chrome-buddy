@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,7 +9,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { CSVProcessor } from '@/utils/csvProcessor';
 import { SupabaseService } from '@/services/supabaseService';
 import { supabase } from '@/integrations/supabase/client';
-import pdfjsLib from 'pdfjs-dist';
+
+// FIX: Import PDF.js correctly (no default export, use named module)
+import * as pdfjsLib from 'pdfjs-dist/build/pdf';
 
 const Upload = () => {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
@@ -53,7 +56,6 @@ const Upload = () => {
       // Example strategy: split lines, look for rows that contain profit/loss numbers etc
       const lines = fullText.split('\n').map(l => l.trim()).filter(Boolean);
 
-      // Try to find header row (first row with certain keywords), then collect all "rows" after
       let headerIdx = lines.findIndex(line => 
         /date|symbol|instrument|buy|sell|profit|volume|qty|quantity/i.test(line)
       );
@@ -61,7 +63,6 @@ const Upload = () => {
       if (headerIdx !== -1) {
         headers = lines[headerIdx].split(/\s{2,}|\t|,/).map(h => h.trim());
       }
-      // Extract rows after header
       let tableData: any[] = [];
       if (headerIdx !== -1 && headers.length >= 3) {
         for (let i = headerIdx + 1; i < lines.length; i++) {
@@ -72,7 +73,6 @@ const Upload = () => {
           tableData.push(row);
         }
       }
-      // Best effort: if nothing found, return []
       return tableData;
     } catch (err) {
       console.error('Error parsing PDF:', err);
