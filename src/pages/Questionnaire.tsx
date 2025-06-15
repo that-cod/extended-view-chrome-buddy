@@ -11,35 +11,6 @@ import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { QuestionnaireService, QuestionnaireData } from '@/services/questionnaireService';
 
-interface QuestionnaireData {
-  // Personal Info
-  name: string;
-  age: string;
-  sex: string;
-  traderType: string;
-  experience: string;
-  
-  // Trading Details
-  markets: string[];
-  portfolioSize: string;
-  emotionalImpact: number;
-  emotionalChallenges: string[];
-  tradingStress: string;
-  
-  // Trading Behavior
-  stopLossDecision: string;
-  currentPlatforms: string;
-  useJournaling: string;
-  emotionManagement: string[];
-  
-  // Goals & Preferences
-  tradingGoals: string[];
-  successDefinition: string;
-  helpfulFeatures: string[];
-  willingnessToPay: string;
-  dataConcerns: string;
-}
-
 const Questionnaire = () => {
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -135,7 +106,6 @@ const Questionnaire = () => {
     }
   };
 
-  // ... keep existing code (canProceed function)
   const canProceed = () => {
     switch (currentStep) {
       case 0:
@@ -153,7 +123,6 @@ const Questionnaire = () => {
     }
   };
 
-  // ... keep existing code (renderStep function - all 5 cases remain the same)
   const renderStep = () => {
     switch (currentStep) {
       case 0:
