@@ -2,6 +2,11 @@
 // Web Worker to extract text from PDF
 import * as pdfjsLib from 'pdfjs-dist';
 
+// Type guard to check TextItem
+function isTextItem(item: any): item is { str: string } {
+  return typeof item === 'object' && item !== null && 'str' in item && typeof item.str === 'string';
+}
+
 self.onmessage = async (e) => {
   const { fileBuffer } = e.data;
   try {
@@ -15,7 +20,8 @@ self.onmessage = async (e) => {
       const page = await pdf.getPage(i);
       const textContent = await page.getTextContent();
       const pageLines = textContent.items
-        .map((item) => (item && item.str ? item.str : ''))
+        .filter(isTextItem)
+        .map((item) => item.str)
         .join(' ')
         .split('\n')
         .map(line => line.trim())
