@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -14,48 +13,38 @@ export const useAuthState = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Helper for creating a profile if one doesn't exist
   const createProfileIfMissing = useCallback(async (userId: string, email: string): Promise<UserProfile | null> => {
-    console.log('Creating missing profile for user:', userId);
-    
     try {
       const { data, error } = await supabase
         .from('profiles')
         .insert({
           id: userId,
-          email: email,
+          email,
           name: null,
           has_completed_questionnaire: false,
-          has_uploaded_statement: false,
+          has_uploaded_statement: false
         })
         .select()
         .single();
 
-      if (error) {
-        console.error('Error creating profile:', error);
-        return null;
-      }
+      if (error || !data) return null;
 
       return {
         id: data.id,
         email: data.email,
         name: data.name,
         hasCompletedQuestionnaire: data.has_completed_questionnaire,
-        hasUploadedStatement: data.has_uploaded_statement,
+        hasUploadedStatement: data.has_uploaded_statement
       };
-    } catch (error) {
-      console.error('Error in createProfileIfMissing:', error);
+    } catch {
       return null;
     }
   }, []);
 
-  const fetchProfileWithTimeout = useCallback(async (userId: string, email: string): Promise<UserProfile | null> => {
-    console.log('Fetching profile with timeout for user:', userId);
-    
-    const timeoutPromise = new Promise<null>((_, reject) => {
-      setTimeout(() => reject(new Error('Profile fetch timeout')), 10000);
-    });
-
-    const fetchPromise = async (): Promise<UserProfile | null> => {
+  // Get profile, fallback to creating if needed
+  const fetchProfile = useCallback(
+    async (userId: string, email: string): Promise<UserProfile | null> => {
       try {
         const { data, error } = await supabase
           .from('profiles')
@@ -63,17 +52,11 @@ export const useAuthState = () => {
           .eq('id', userId)
           .maybeSingle();
 
-        if (error) {
-          console.error('Error fetching profile:', error);
+        if (error || !data) {
+          // Try to create profile if missing
           return await createProfileIfMissing(userId, email);
         }
 
-        if (!data) {
-          console.log('No profile found, creating one');
-          return await createProfileIfMissing(userId, email);
-        }
-
-        console.log('Profile fetched successfully:', data);
         return {
           id: data.id,
           email: data.email,
@@ -81,98 +64,83 @@ export const useAuthState = () => {
           hasCompletedQuestionnaire: data.has_completed_questionnaire,
           hasUploadedStatement: data.has_uploaded_statement,
         };
-      } catch (error) {
-        console.error('Error in fetchProfile:', error);
+      } catch {
+        // Fallback
         return await createProfileIfMissing(userId, email);
       }
-    };
-
-    try {
-      return await Promise.race([fetchPromise(), timeoutPromise]);
-    } catch (error) {
-      console.error('Profile fetch timed out, creating fallback profile');
-      return await createProfileIfMissing(userId, email);
-    }
-  }, [createProfileIfMissing]);
+    },
+    [createProfileIfMissing]
+  );
 
   useEffect(() => {
     let mounted = true;
+    let loadingFinished = false;
 
-    const initializeAuth = async () => {
-      try {
-        console.log('Starting auth initialization...');
-        
-        const { data: { session }, error } = await supabase.auth.getSession();
-        
-        if (error) {
-          console.error('Session error:', error);
-          if (mounted) {
-            setUser(null);
-            setIsLoading(false);
-          }
-          return;
-        }
-
-        if (session?.user) {
-          console.log('Found existing session for user:', session.user.id);
-          const profile = await fetchProfileWithTimeout(session.user.id, session.user.email || '');
-          if (mounted) {
-            setUser(profile);
-            setIsLoading(false);
-          }
-        } else {
-          console.log('No existing session found');
-          if (mounted) {
-            setUser(null);
-            setIsLoading(false);
-          }
-        }
-      } catch (error) {
-        console.error('Auth initialization error:', error);
-        if (mounted) {
-          setUser(null);
-          setIsLoading(false);
-        }
+    // Always ensure isLoading flipped in all cases
+    const finishLoading = () => {
+      if (!loadingFinished) {
+        setIsLoading(false);
+        loadingFinished = true;
       }
     };
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed:', event, 'User ID:', session?.user?.id);
-      
-      if (!mounted) return;
-
+    // Initialize session and user
+    const initializeAuth = async () => {
       try {
+        const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-          console.log('User signed in, fetching profile...');
-          const profile = await fetchProfileWithTimeout(session.user.id, session.user.email || '');
-          setUser(profile);
+          const profile = await fetchProfile(session.user.id, session.user.email || '');
+          if (mounted) setUser(profile);
         } else {
-          console.log('User signed out');
-          setUser(null);
+          if (mounted) setUser(null);
         }
-      } catch (error) {
-        console.error('Error handling auth state change:', error);
-        setUser(null);
+      } catch {
+        if (mounted) setUser(null);
       } finally {
-        setIsLoading(false);
+        finishLoading();
+      }
+    };
+
+    // Auth state change - never async directly!
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // NEVER do async in this callback (Supabase best practice)
+      if (!mounted) return;
+      if (session?.user) {
+        setIsLoading(true); // new loading for profile fetch on user change
+        setTimeout(async () => {
+          try {
+            const profile = await fetchProfile(session.user.id, session.user.email || '');
+            if (mounted) setUser(profile);
+          } catch {
+            if (mounted) setUser(null);
+          } finally {
+            finishLoading();
+          }
+        }, 0);
+      } else {
+        setUser(null);
+        finishLoading();
       }
     });
 
     initializeAuth();
 
+    // Fallback loading guard: if loading stuck for >8s, release (prevents infinite spinner)
+    const failSafe = setTimeout(() => {
+      finishLoading();
+    }, 8000);
+
     return () => {
       mounted = false;
       subscription.unsubscribe();
+      clearTimeout(failSafe);
     };
-  }, [fetchProfileWithTimeout]);
+  }, [fetchProfile]);
 
+  // Profile update logic (unchanged)
   const updateUser = async (updates: Partial<UserProfile>) => {
-    if (!user) {
-      throw new Error('No user to update');
-    }
-    
-    console.log('Updating user profile:', updates);
-    
+    if (!user) throw new Error('No user to update');
+
     const toUpdate: Partial<any> = {};
     if ('name' in updates) toUpdate.name = updates.name;
     if ('hasCompletedQuestionnaire' in updates) toUpdate.has_completed_questionnaire = updates.hasCompletedQuestionnaire;
@@ -185,11 +153,8 @@ export const useAuthState = () => {
       .select()
       .single();
 
-    if (error || !data) {
-      console.error('Error updating profile:', error);
-      throw error || new Error('Failed to update user profile');
-    }
-    
+    if (error || !data) throw error || new Error('Failed to update user profile');
+
     const updatedUser = {
       id: data.id,
       email: data.email,
@@ -197,8 +162,7 @@ export const useAuthState = () => {
       hasCompletedQuestionnaire: data.has_completed_questionnaire,
       hasUploadedStatement: data.has_uploaded_statement,
     };
-    
-    console.log('Profile updated successfully:', updatedUser);
+
     setUser(updatedUser);
   };
 
