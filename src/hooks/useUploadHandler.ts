@@ -1,0 +1,171 @@
+import { useToast } from "@/hooks/use-toast";
+import { useTradingData } from '@/hooks/useTradingData';
+import { useAuth } from '@/contexts/AuthContext';
+import { SupabaseService } from '@/services/supabaseService';
+import { supabase } from '@/integrations/supabase/client';
+import { usePdfTextExtract } from './usePdfTextExtract';
+import { useCsvProcessing } from './useCsvProcessing';
+import { useState } from 'react';
+
+type UploadStatus = 'idle' | 'uploading' | 'success' | 'error';
+
+export const useUploadHandler = () => {
+  const [status, setStatus] = useState<UploadStatus>('idle');
+  const [fileName, setFileName] = useState<string>('');
+  const [results, setResults] = useState<any>(null);
+  const [errorMessage, setErrorMessage] = useState<string>('');
+  const [isExporting, setIsExporting] = useState(false);
+
+  const { toast } = useToast();
+  const { invalidateData } = useTradingData();
+  const { updateUser } = useAuth();
+
+  const { extractTextLines } = usePdfTextExtract();
+  const { processCsvFile } = useCsvProcessing();
+
+  // Validation (unchanged)
+  const validateFile = (file: File): boolean => {
+    const isCSV = file.type.includes('csv') || file.name.toLowerCase().endsWith('.csv');
+    const isPDF = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    if (!isCSV && !isPDF) {
+      setErrorMessage('Please upload a valid CSV or PDF file');
+      return false;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorMessage('File size must be less than 10MB');
+      return false;
+    }
+    return true;
+  };
+
+  // Main handler
+  const handleFileUpload = async (file: File) => {
+    if (!validateFile(file)) {
+      setStatus('error');
+      return;
+    }
+    setFileName(file.name);
+    setStatus('uploading');
+    setErrorMessage('');
+    let processedData: any[] = [];
+    let pdfRawText: string[] = [];
+    let isPDF = false;
+    try {
+      const statement = await SupabaseService.createUploadedStatement(file.name, file.size, file.type);
+      if (!statement) throw new Error('Failed to create statement record');
+      await SupabaseService.updateStatementStatus(statement.id, 'processing');
+
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        isPDF = true;
+        pdfRawText = await extractTextLines(file);
+        if (!pdfRawText || pdfRawText.length === 0) throw new Error('No data found in PDF file');
+        processedData = [{ statementId: statement.id, rawText: pdfRawText.join('\n') }];
+      } else {
+        processedData = await processCsvFile(file);
+      }
+
+      let insertedTrades = null;
+      if (!isPDF) {
+        if (processedData.length === 0) {
+          throw new Error('No valid trades found in file. Please check the format.');
+        }
+        insertedTrades = await SupabaseService.insertTrades(processedData, statement.id);
+        if (!insertedTrades) throw new Error('Failed to save trades to database');
+      }
+
+      let analysis;
+      if (!isPDF) {
+        const res = await supabase.functions.invoke('analyze-trading-data', {
+          body: { statementId: statement.id }
+        });
+        analysis = res.data || {
+          totalTrades: insertedTrades.length,
+          winRate: Math.round((insertedTrades.filter(t => t.profit > 0).length / insertedTrades.length) * 100),
+          insights: 'Analysis completed successfully'
+        };
+      } else {
+        analysis = {
+          rawText: pdfRawText,
+          totalLines: pdfRawText.length,
+          insights: [
+            'All text extracted from PDF.',
+            'No structured trade parsing applied. Please analyze lines manually.'
+          ]
+        };
+      }
+
+      await SupabaseService.updateStatementStatus(statement.id, 'completed');
+      setStatus('success');
+      setResults(analysis);
+      updateUser({ hasUploadedStatement: true });
+      invalidateData();
+      toast({
+        title: "Upload Successful",
+        description: isPDF
+          ? `${file.name} has been uploaded and its text extracted.`
+          : `${file.name} has been processed. Found ${insertedTrades.length} trades.`,
+      });
+    } catch (error) {
+      setStatus('error');
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to upload and process file');
+      toast({
+        title: "Upload Failed",
+        description: error instanceof Error ? error.message : 'Failed to upload and process file',
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Export logic (unchanged)
+  const handleExport = async (format: 'json' | 'csv' = 'json') => {
+    setIsExporting(true);
+    try {
+      const exportData = await SupabaseService.exportData(format);
+      if (!exportData) {
+        throw new Error('No data to export');
+      }
+      const blob = new Blob([exportData], {
+        type: format === 'json' ? 'application/json' : 'text/csv'
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `trading-data-${new Date().toISOString().split('T')[0]}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: "Export Successful",
+        description: `Your trading data has been exported as ${format.toUpperCase()}.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Export Failed",
+        description: error instanceof Error ? error.message : 'Failed to export data',
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const resetUpload = () => {
+    setStatus('idle');
+    setFileName('');
+    setResults(null);
+    setErrorMessage('');
+  };
+
+  return {
+    uploadStatus: status,
+    fileName,
+    analysisResults: results,
+    errorMessage,
+    isExporting,
+    handleFileUpload,
+    handleExport,
+    resetUpload,
+  };
+};

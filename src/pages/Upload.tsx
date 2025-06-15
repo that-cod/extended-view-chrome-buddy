@@ -8,219 +8,27 @@ import { useAuth } from '@/contexts/AuthContext';
 import { CSVProcessor } from '@/utils/csvProcessor';
 import { SupabaseService } from '@/services/supabaseService';
 import { supabase } from '@/integrations/supabase/client';
+import { useUploadHandler } from '@/hooks/useUploadHandler';
 
 // FIX: Import PDF.js correctly (no default export, use named module)
 import * as pdfjsLib from 'pdfjs-dist';
 
 const Upload = () => {
-  const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
-  const [fileName, setFileName] = useState<string>('');
-  const [analysisResults, setAnalysisResults] = useState<any>(null);
-  const [errorMessage, setErrorMessage] = useState<string>('');
-  const [isExporting, setIsExporting] = useState(false);
-  const { toast } = useToast();
-  const { invalidateData } = useTradingData();
-  const { updateUser } = useAuth();
+  const {
+    uploadStatus,
+    fileName,
+    analysisResults,
+    errorMessage,
+    isExporting,
+    handleFileUpload,
+    handleExport,
+    resetUpload,
+  } = useUploadHandler();
 
-  // Updated validation: Accept CSV or PDF files
-  const validateFile = (file: File): boolean => {
-    const isCSV = file.type.includes('csv') || file.name.toLowerCase().endsWith('.csv');
-    const isPDF = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-    if (!isCSV && !isPDF) {
-      setErrorMessage('Please upload a valid CSV or PDF file');
-      return false;
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      setErrorMessage('File size must be less than 10MB');
-      return false;
-    }
-    return true;
-  };
-
-  // Helper function to extract all text lines from PDF (no structure, just raw lines)
-  const parsePDFFile = async (file: File): Promise<string[]> => {
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      let lines: string[] = [];
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        // Each item is a chunk of text on the page
-        const pageLines = textContent.items.map((item: any) => item.str).join(' ').split('\n');
-        // Collect & push non-empty lines
-        pageLines.forEach(line => {
-          const trimmed = line.trim();
-          if (trimmed) lines.push(trimmed);
-        });
-      }
-      return lines;
-    } catch (err) {
-      console.error('Error extracting PDF text:', err);
-      setErrorMessage('Failed to extract data from PDF file. Please check PDF format.');
-      return [];
-    }
-  };
-
-  // Modified file upload handler to support both CSV and PDF (raw PDF text version)
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const onFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
-    if (!validateFile(file)) {
-      setUploadStatus('error');
-      return;
-    }
-
-    setFileName(file.name);
-    setUploadStatus('uploading');
-    setErrorMessage('');
-
-    console.log('Processing file:', file.name, 'Size:', file.size, 'Type:', file.type);
-
-    let processedData: any[] = [];
-    let pdfRawText: string[] = [];
-    let isPDF = false;
-    try {
-      // Create uploaded statement record
-      const statement = await SupabaseService.createUploadedStatement(
-        file.name,
-        file.size,
-        file.type
-      );
-
-      if (!statement) throw new Error('Failed to create statement record');
-
-      await SupabaseService.updateStatementStatus(statement.id, 'processing');
-
-      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-        isPDF = true;
-        // Just extract all lines of text from the PDF, don't map to trade fields
-        pdfRawText = await parsePDFFile(file);
-        if (!pdfRawText || pdfRawText.length === 0) throw new Error('No data found in PDF file');
-
-        // Option A: Save as one "raw" text blob (better for non-structured parsing)
-        processedData = [{ statementId: statement.id, rawText: pdfRawText.join('\n') }];
-        // Option B: Or if you want, each line as a record (less common)
-        // processedData = pdfRawText.map(line => ({ statementId: statement.id, rawText: line }));
-
-        // No insertion to trades table since we have no structured fields, just mark complete
-      } else {
-        // CSV flow (original)
-        const csvText = await file.text();
-        console.log('CSV content length:', csvText.length);
-
-        const csvRows = CSVProcessor.parseCSV(csvText);
-        if (csvRows.length === 0) throw new Error('No valid data found in CSV file');
-
-        processedData = CSVProcessor.mapToTrades(csvRows);
-      }
-
-      console.log('Processed data:', processedData.length);
-
-      // Insert trades only if we have structured data (CSV)
-      let insertedTrades = null;
-      if (!isPDF) {
-        if (processedData.length === 0) {
-          throw new Error('No valid trades found in file. Please check the format.');
-        }
-
-        insertedTrades = await SupabaseService.insertTrades(processedData, statement.id);
-
-        if (!insertedTrades) throw new Error('Failed to save trades to database');
-      }
-
-      // Run analysis for CSV, but for PDF just show raw text results
-      let analysis;
-      if (!isPDF) {
-        const res = await supabase.functions.invoke('analyze-trading-data', {
-          body: { statementId: statement.id }
-        });
-        analysis = res.data || {
-          totalTrades: insertedTrades.length,
-          winRate: Math.round((insertedTrades.filter(t => t.profit > 0).length / insertedTrades.length) * 100),
-          insights: 'Analysis completed successfully'
-        };
-      } else {
-        analysis = {
-          rawText: pdfRawText,
-          totalLines: pdfRawText.length,
-          insights: [
-            'All text extracted from PDF.',
-            'No structured trade parsing applied. Please analyze lines manually.'
-          ]
-        }
-      }
-
-      await SupabaseService.updateStatementStatus(statement.id, 'completed');
-
-      setUploadStatus('success');
-      setAnalysisResults(analysis);
-
-      updateUser({ hasUploadedStatement: true });
-      invalidateData();
-
-      toast({
-        title: "Upload Successful",
-        description: isPDF
-          ? `${file.name} has been uploaded and its text extracted.`
-          : `${file.name} has been processed. Found ${insertedTrades.length} trades.`,
-      });
-
-      console.log('Upload successful. Data processed:', processedData.length);
-    } catch (error) {
-      console.error('Upload error:', error);
-      setUploadStatus('error');
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to upload and process file');
-      toast({
-        title: "Upload Failed",
-        description: error instanceof Error ? error.message : 'Failed to upload and process file',
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleExport = async (format: 'json' | 'csv' = 'json') => {
-    setIsExporting(true);
-    try {
-      const exportData = await SupabaseService.exportData(format);
-      if (!exportData) {
-        throw new Error('No data to export');
-      }
-
-      const blob = new Blob([exportData], { 
-        type: format === 'json' ? 'application/json' : 'text/csv' 
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `trading-data-${new Date().toISOString().split('T')[0]}.${format}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      toast({
-        title: "Export Successful",
-        description: `Your trading data has been exported as ${format.toUpperCase()}.`,
-      });
-    } catch (error) {
-      console.error('Export error:', error);
-      toast({
-        title: "Export Failed",
-        description: error instanceof Error ? error.message : 'Failed to export data',
-        variant: "destructive",
-      });
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
-  const resetUpload = () => {
-    setUploadStatus('idle');
-    setFileName('');
-    setAnalysisResults(null);
-    setErrorMessage('');
+    handleFileUpload(file);
   };
 
   return (
@@ -250,7 +58,7 @@ const Upload = () => {
                 <input
                   type="file"
                   accept=".csv,application/pdf,.pdf,text/csv"
-                  onChange={handleFileUpload}
+                  onChange={onFileInputChange}
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                 />
               </>
