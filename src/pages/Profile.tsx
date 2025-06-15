@@ -1,50 +1,36 @@
-
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { User, TrendingUp, Brain, Target } from 'lucide-react';
+import { User, LogOut, Trash2, Settings as SettingsIcon } from 'lucide-react';
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from '@/integrations/supabase/client';
 
 const Profile = () => {
-  const [questionnaireComplete, setQuestionnaireComplete] = useState(false);
-  const [currentQuestion, setCurrentQuestion] = useState(0);
-  
-  const questions = [
-    {
-      id: 1,
-      question: "How long have you been trading?",
-      options: ["Less than 6 months", "6 months - 2 years", "2-5 years", "5+ years"],
-      category: "experience"
-    },
-    {
-      id: 2,
-      question: "What triggers you to make emotional trading decisions?",
-      options: ["Fear of missing out (FOMO)", "Recent losses", "Market volatility", "News events"],
-      category: "emotional_triggers"
-    },
-    {
-      id: 3,
-      question: "How do you typically react to losing trades?",
-      options: ["Immediately try to recover losses", "Take a break", "Analyze what went wrong", "Reduce position size"],
-      category: "loss_reaction"
-    },
-    {
-      id: 4,
-      question: "What's your risk tolerance level?",
-      options: ["Very Conservative", "Conservative", "Moderate", "Aggressive"],
-      category: "risk_tolerance"
-    },
-    {
-      id: 5,
-      question: "Which assets do you prefer trading?",
-      options: ["Forex", "Stocks", "Crypto", "Commodities"],
-      category: "preferred_assets"
-    }
-  ];
+  const { user, logout } = useAuth();
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [lastUpload, setLastUpload] = useState<string | null>(null);
 
-  const [answers, setAnswers] = useState<Record<number, string>>({});
+  // Fetch last upload date from uploaded_statements
+  React.useEffect(() => {
+    const fetchLastUpload = async () => {
+      if (!user?.id) return setLastUpload(null);
+      const { data, error } = await supabase
+        .from('uploaded_statements')
+        .select('upload_date')
+        .eq('user_id', user.id)
+        .order('upload_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data?.upload_date) setLastUpload(new Date(data.upload_date).toLocaleString());
+      else setLastUpload(null);
+    };
+    fetchLastUpload();
+  }, [user?.id]);
 
+  // Dummy psychological profile (replace with real values as available)
   const psychologicalProfile = {
     riskTolerance: 75,
     emotionalControl: 60,
@@ -54,99 +40,90 @@ const Profile = () => {
     patternRecognition: 70
   };
 
-  const handleAnswerSelect = (questionId: number, answer: string) => {
-    setAnswers(prev => ({ ...prev, [questionId]: answer }));
-  };
+  // Risk Profile summary for display
+  const riskProfileSummary = useMemo(() => {
+    const { riskTolerance } = psychologicalProfile;
+    if (riskTolerance >= 80) return "High";
+    if (riskTolerance >= 60) return "Medium-high";
+    if (riskTolerance >= 40) return "Medium";
+    return "Conservative";
+  }, [psychologicalProfile]);
 
-  const handleNext = () => {
-    if (currentQuestion < questions.length - 1) {
-      setCurrentQuestion(currentQuestion + 1);
-    } else {
-      setQuestionnaireComplete(true);
-      console.log('Questionnaire completed:', answers);
+  // Delete account function
+  const handleDeleteAccount = async () => {
+    setDeleting(true);
+    // Call RPC or delete user rows from all related tables first, then profiles.
+    // This is a placeholder; real-world production apps need a better cascade!
+    try {
+      // Optionally, delete from other user-owned tables here
+      await supabase.from('profiles').delete().eq('id', user?.id);
+      // Sign out user
+      await logout();
+      // Optionally, show notification
+    } catch (e) {
+      // Optionally, show error
     }
+    setDeleting(false);
+    setShowDeleteDialog(false);
   };
-
-  const handlePrevious = () => {
-    if (currentQuestion > 0) {
-      setCurrentQuestion(currentQuestion - 1);
-    }
-  };
-
-  const getScoreColor = (score: number) => {
-    if (score >= 70) return "text-green-400";
-    if (score >= 50) return "text-yellow-400";
-    return "text-red-400";
-  };
-
-  const getScoreDescription = (score: number) => {
-    if (score >= 70) return "Good";
-    if (score >= 50) return "Moderate";
-    return "Needs Improvement";
-  };
-
-  if (!questionnaireComplete) {
-    const progress = ((currentQuestion + 1) / questions.length) * 100;
-    const question = questions[currentQuestion];
-
-    return (
-      <div className="max-w-2xl mx-auto space-y-6">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold mb-2">Psychological Profile Setup</h1>
-          <p className="text-gray-400">Help us understand your trading psychology</p>
-        </div>
-
-        <Card className="bg-[#232833] border-gray-700">
-          <CardHeader>
-            <div className="flex justify-between items-center mb-4">
-              <CardTitle className="text-white">Question {currentQuestion + 1} of {questions.length}</CardTitle>
-              <Badge variant="outline">{Math.round(progress)}% Complete</Badge>
-            </div>
-            <Progress value={progress} className="mb-4" />
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <h2 className="text-xl font-medium text-white mb-6">{question.question}</h2>
-            
-            <div className="space-y-3">
-              {question.options.map((option, index) => (
-                <button
-                  key={index}
-                  onClick={() => handleAnswerSelect(question.id, option)}
-                  className={`w-full p-4 text-left rounded-lg border transition-colors ${
-                    answers[question.id] === option
-                      ? 'bg-blue-600 border-blue-500 text-white'
-                      : 'bg-[#1c2027] border-gray-600 text-gray-300 hover:border-gray-500'
-                  }`}
-                >
-                  {option}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex justify-between pt-6">
-              <Button 
-                onClick={handlePrevious} 
-                disabled={currentQuestion === 0}
-                variant="outline"
-              >
-                Previous
-              </Button>
-              <Button 
-                onClick={handleNext}
-                disabled={!answers[question.id]}
-                className="bg-blue-600 hover:bg-blue-700"
-              >
-                {currentQuestion === questions.length - 1 ? 'Complete' : 'Next'}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-8">
+      <div className="flex items-center gap-4 justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <User className="w-10 h-10 text-blue-400" />
+          <div>
+            <div className="text-2xl font-bold text-white">{user?.name || user?.email}</div>
+            <div className="text-sm text-gray-400">{user?.email}</div>
+          </div>
+        </div>
+        <div>
+          <Button variant="outline" onClick={logout} className="mr-2">
+            <LogOut className="w-4 h-4 mr-1" />
+            Logout
+          </Button>
+        </div>
+      </div>
+      {/* Settings Card */}
+      <Card className="bg-[#232833] border-gray-700">
+        <CardHeader>
+          <CardTitle className="text-white flex items-center gap-2">
+            <SettingsIcon className="w-5 h-5" />
+            Settings &amp; Account
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+            <div className="space-y-3">
+              <div>
+                <span className="text-gray-400 text-sm">Email:</span>
+                <div className="text-white text-sm">{user?.email}</div>
+              </div>
+              <div>
+                <span className="text-gray-400 text-sm">Risk Profile:</span>
+                <div className="text-white text-sm">{riskProfileSummary}</div>
+              </div>
+              <div>
+                <span className="text-gray-400 text-sm">Last Upload Date:</span>
+                <div className="text-white text-sm">{lastUpload || "No upload yet"}</div>
+              </div>
+            </div>
+            <div className="flex flex-col space-y-3">
+              <Button variant="outline" onClick={() => window.location.href = "/questionnaire"}>
+                Update Questionnaire
+              </Button>
+              <Button variant="outline" className="border-red-700 text-red-400 hover:bg-red-900/20" onClick={() => setShowDeleteDialog(true)}>
+                <Trash2 className="w-4 h-4 mr-1" />
+                Delete Account
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Questionnaire & Psychological profile below */}
+      <div className="max-w-4xl mx-auto space-y-6">
       <div className="text-center mb-8">
         <h1 className="text-3xl font-bold mb-2">Your Psychological Profile</h1>
         <p className="text-gray-400">Based on your questionnaire responses and trading data</p>
@@ -167,19 +144,19 @@ const Profile = () => {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-400">Experience Level:</span>
-                  <span className="text-white">{answers[1] || 'Not specified'}</span>
+                  <span className="text-white">{/* answers[1] ||  */'Not specified'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400">Risk Tolerance:</span>
-                  <span className="text-white">{answers[4] || 'Not specified'}</span>
+                  <span className="text-white">{/* answers[4] ||  */'Not specified'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400">Preferred Assets:</span>
-                  <span className="text-white">{answers[5] || 'Not specified'}</span>
+                  <span className="text-white">{/* answers[5] ||  */'Not specified'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400">Main Trigger:</span>
-                  <span className="text-white">{answers[2] || 'Not specified'}</span>
+                  <span className="text-white">{/* answers[2] ||  */'Not specified'}</span>
                 </div>
               </div>
             </div>
@@ -200,7 +177,7 @@ const Profile = () => {
         <Card className="bg-[#232833] border-gray-700">
           <CardHeader>
             <CardTitle className="text-white flex items-center">
-              <Brain className="h-5 w-5 mr-2" />
+              <User className="h-5 w-5 mr-2" />
               Psychological Metrics
             </CardTitle>
           </CardHeader>
@@ -232,7 +209,7 @@ const Profile = () => {
         <Card className="bg-[#232833] border-gray-700">
           <CardHeader>
             <CardTitle className="text-white flex items-center">
-              <Target className="h-5 w-5 mr-2" />
+              <User className="h-5 w-5 mr-2" />
               Improvement Areas
             </CardTitle>
           </CardHeader>
@@ -265,7 +242,7 @@ const Profile = () => {
       <Card className="bg-[#232833] border-gray-700">
         <CardHeader>
           <CardTitle className="text-white flex items-center">
-            <TrendingUp className="h-5 w-5 mr-2" />
+            <User className="h-5 w-5 mr-2" />
             Personalized Recommendations
           </CardTitle>
         </CardHeader>
@@ -295,7 +272,7 @@ const Profile = () => {
 
       <div className="text-center">
         <Button 
-          onClick={() => setQuestionnaireComplete(false)}
+          onClick={() => {window.location.href = "/questionnaire"}}
           variant="outline"
           className="mr-4"
         >
@@ -306,7 +283,47 @@ const Profile = () => {
         </Button>
       </div>
     </div>
+
+      {/* Delete Confirmation Dialog */}
+      {showDeleteDialog && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="bg-[#232833] rounded-lg p-6 w-full max-w-sm border border-gray-700 shadow-xl">
+            <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-red-500" />
+              Confirm Account Deletion
+            </h3>
+            <p className="text-gray-300 mb-4 text-sm">
+              Are you sure you want to delete your account? This action cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <Button disabled={deleting} variant="outline" className="flex-1" onClick={() => setShowDeleteDialog(false)}>
+                Cancel
+              </Button>
+              <Button
+                disabled={deleting}
+                className="flex-1 bg-red-700 hover:bg-red-800 text-white"
+                onClick={handleDeleteAccount}
+              >
+                {deleting ? "Deleting..." : "Delete"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
+
+  function getScoreColor(value: number): string {
+    if (value >= 70) return "text-green-400";
+    if (value >= 50) return "text-yellow-400";
+    return "text-red-400";
+  }
+
+  function getScoreDescription(value: number): string {
+    if (value >= 70) return "Good";
+    if (value >= 50) return "Moderate";
+    return "Needs Improvement";
+  }
 };
 
 export default Profile;
