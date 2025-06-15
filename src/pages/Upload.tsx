@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,18 +12,42 @@ const Upload = () => {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
   const [fileName, setFileName] = useState<string>('');
   const [analysisResults, setAnalysisResults] = useState<any>(null);
+  const [errorMessage, setErrorMessage] = useState<string>('');
   const { toast } = useToast();
   const { invalidateData } = useTradingData();
   const { updateUser } = useAuth();
+
+  const validateCSVFile = (file: File): boolean => {
+    // Check file type
+    if (!file.type.includes('csv') && !file.name.toLowerCase().endsWith('.csv')) {
+      setErrorMessage('Please upload a valid CSV file');
+      return false;
+    }
+    
+    // Check file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorMessage('File size must be less than 10MB');
+      return false;
+    }
+    
+    return true;
+  };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    // Validate file
+    if (!validateCSVFile(file)) {
+      setUploadStatus('error');
+      return;
+    }
+
     setFileName(file.name);
     setUploadStatus('uploading');
+    setErrorMessage('');
     
-    console.log('Uploading file:', file.name);
+    console.log('Uploading file:', file.name, 'Size:', file.size, 'Type:', file.type);
     
     try {
       const response = await tradingAPI.uploadTrades(file);
@@ -47,6 +72,7 @@ const Upload = () => {
     } catch (error) {
       console.error('Upload error:', error);
       setUploadStatus('error');
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to upload and process file');
       
       toast({
         title: "Upload Failed",
@@ -60,6 +86,7 @@ const Upload = () => {
     setUploadStatus('idle');
     setFileName('');
     setAnalysisResults(null);
+    setErrorMessage('');
   };
 
   return (
@@ -77,17 +104,18 @@ const Upload = () => {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center">
+          <div className="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center relative">
             {uploadStatus === 'idle' && (
               <>
                 <UploadIcon className="mx-auto h-12 w-12 text-gray-400 mb-4" />
                 <div className="space-y-2">
                   <h3 className="text-lg font-medium text-white">Drop your CSV file here</h3>
                   <p className="text-gray-400">or click to browse</p>
+                  <p className="text-sm text-gray-500">Maximum file size: 10MB</p>
                 </div>
                 <input
                   type="file"
-                  accept=".csv"
+                  accept=".csv,text/csv"
                   onChange={handleFileUpload}
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                 />
@@ -123,7 +151,7 @@ const Upload = () => {
                 <AlertCircle className="mx-auto h-12 w-12 text-red-500" />
                 <div>
                   <h3 className="text-lg font-medium text-white">Upload Failed</h3>
-                  <p className="text-gray-400">Please ensure you're uploading a valid CSV file or check your connection</p>
+                  <p className="text-gray-400">{errorMessage || 'Please ensure you\'re uploading a valid CSV file'}</p>
                   <p className="text-sm text-red-400 mt-2">{fileName}</p>
                 </div>
                 <Button onClick={resetUpload} variant="outline" className="mt-4">
@@ -202,7 +230,7 @@ const Upload = () => {
                 <p className="text-sm text-gray-300">{analysisResults.insights}</p>
               </div>
             )}
-          </CardContent>
+          </Content>
         </Card>
       )}
     </div>

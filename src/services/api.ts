@@ -37,16 +37,37 @@ class TradingAPI {
   }
 
   async uploadTrades(file: File): Promise<ApiResponse> {
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    return this.makeRequest('/trades/upload', {
-      method: 'POST',
-      headers: {
-        'x-api-key': API_KEY,
-      },
-      body: formData,
-    });
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      console.log('Uploading file:', file.name, 'Size:', file.size, 'Type:', file.type);
+      
+      const response = await fetch(`${API_BASE_URL}/trades/upload`, {
+        method: 'POST',
+        headers: {
+          'x-api-key': API_KEY,
+          // Don't set Content-Type for FormData - let browser set it with boundary
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Upload failed with status:', response.status, 'Error:', errorText);
+        throw new Error(`Upload failed: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      return { success: true, data };
+    } catch (error) {
+      console.error('Upload error:', error);
+      return { 
+        success: false, 
+        data: null, 
+        message: error instanceof Error ? error.message : 'Unknown error occurred' 
+      };
+    }
   }
 }
 
