@@ -14,8 +14,8 @@ import { QuestionnaireService, QuestionnaireData } from '@/services/questionnair
 const Questionnaire = () => {
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [hasLoadedData, setHasLoadedData] = useState(false);
+  const [isLoadingData, setIsLoadingData] = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false);
   const { updateUser, user, isLoading: authLoading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -45,60 +45,56 @@ const Questionnaire = () => {
   const totalSteps = 5;
   const progress = ((currentStep + 1) / totalSteps) * 100;
 
-  // Load existing questionnaire data if user has completed it
+  // Load existing questionnaire data when user becomes available
   useEffect(() => {
-    const loadExistingData = async () => {
-      console.log('Starting to load questionnaire data...');
-      console.log('Auth loading:', authLoading, 'User:', user?.id, 'Has completed:', user?.hasCompletedQuestionnaire);
-      
-      // Don't proceed if auth is still loading
-      if (authLoading) {
-        console.log('Auth still loading, waiting...');
+    const loadQuestionnaireData = async () => {
+      // Skip if auth is still loading or data already loaded
+      if (authLoading || dataLoaded) {
+        console.log('Skipping data load - authLoading:', authLoading, 'dataLoaded:', dataLoaded);
         return;
       }
 
-      // If no user, we're done loading (they need to log in)
+      // If no user, mark as loaded and return
       if (!user) {
-        console.log('No user found, finishing load');
-        setIsLoading(false);
-        setHasLoadedData(true);
+        console.log('No user found, marking data as loaded');
+        setDataLoaded(true);
         return;
       }
 
-      setIsLoading(true);
+      console.log('Loading questionnaire data for user:', user.id, 'hasCompleted:', user.hasCompletedQuestionnaire);
+      
+      setIsLoadingData(true);
       
       try {
         if (user.hasCompletedQuestionnaire) {
-          console.log('User has completed questionnaire, loading existing data...');
+          console.log('Fetching existing questionnaire data...');
           const existingData = await QuestionnaireService.getQuestionnaireResponse();
+          
           if (existingData) {
+            console.log('Found existing data, populating form...');
             setFormData(existingData);
-            console.log('Loaded existing questionnaire data:', existingData);
           } else {
             console.log('No existing data found despite completion flag');
           }
         } else {
-          console.log('User has not completed questionnaire, using default data');
+          console.log('User has not completed questionnaire - using defaults');
         }
       } catch (error) {
         console.error('Error loading questionnaire data:', error);
         toast({
-          title: "Error",
-          description: "Failed to load your previous responses. Starting fresh.",
+          title: "Loading Error",
+          description: "Failed to load your previous responses. You can still complete the questionnaire.",
           variant: "destructive",
         });
       } finally {
-        setIsLoading(false);
-        setHasLoadedData(true);
-        console.log('Finished loading questionnaire data');
+        setIsLoadingData(false);
+        setDataLoaded(true);
+        console.log('Questionnaire data loading complete');
       }
     };
 
-    // Only load data once when user state is settled
-    if (!hasLoadedData) {
-      loadExistingData();
-    }
-  }, [user, authLoading, hasLoadedData, toast]);
+    loadQuestionnaireData();
+  }, [user, authLoading, dataLoaded, toast]);
 
   const handleArrayToggle = (field: keyof QuestionnaireData, value: string) => {
     setFormData(prev => ({
@@ -529,24 +525,32 @@ const Questionnaire = () => {
     }
   };
 
-  // Show loading only while auth is loading or while we're actively loading questionnaire data
-  if (authLoading || isLoading) {
+  // Show loading screen while auth is loading or data is being loaded
+  if (authLoading || isLoadingData) {
     return (
       <div className="min-h-screen bg-[#171b22] p-4 flex items-center justify-center">
-        <div className="text-white">
-          {authLoading ? 'Checking authentication...' : 'Loading questionnaire...'}
+        <div className="text-center">
+          <div className="text-white text-lg mb-2">
+            {authLoading ? 'Checking authentication...' : 'Loading your questionnaire...'}
+          </div>
+          <div className="text-gray-400 text-sm">
+            {authLoading ? 'Please wait while we verify your login' : 'Retrieving your previous responses'}
+          </div>
         </div>
       </div>
     );
   }
 
-  // If user is not authenticated, redirect or show login message
+  // If user is not authenticated after loading is complete
   if (!user) {
     return (
       <div className="min-h-screen bg-[#171b22] p-4 flex items-center justify-center">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-white mb-4">Authentication Required</h1>
-          <p className="text-gray-400">Please log in to complete your trading profile.</p>
+          <p className="text-gray-400 mb-4">Please log in to complete your trading profile.</p>
+          <Button onClick={() => navigate('/landing')} className="bg-blue-600 hover:bg-blue-700">
+            Go to Login
+          </Button>
         </div>
       </div>
     );

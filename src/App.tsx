@@ -19,10 +19,25 @@ import { SidebarProvider, SidebarTrigger, SidebarInset } from "@/components/ui/s
 const queryClient = new QueryClient();
 
 const AppContent = () => {
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
+
+  console.log('AppContent render - isLoading:', isLoading, 'user:', user?.id, 'hasCompletedQuestionnaire:', user?.hasCompletedQuestionnaire);
+
+  // Show loading while auth is being determined
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#171b22] flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-white text-lg mb-2">Loading...</div>
+          <div className="text-gray-400 text-sm">Checking your authentication status</div>
+        </div>
+      </div>
+    );
+  }
 
   // If user is not authenticated, show landing page
   if (!user) {
+    console.log('No user found, redirecting to landing');
     return (
       <Routes>
         <Route path="/landing" element={<Landing />} />
@@ -33,6 +48,7 @@ const AppContent = () => {
 
   // If user hasn't completed questionnaire, redirect to questionnaire
   if (!user.hasCompletedQuestionnaire) {
+    console.log('User has not completed questionnaire, redirecting');
     return (
       <Routes>
         <Route path="/questionnaire" element={<Questionnaire />} />
@@ -41,7 +57,8 @@ const AppContent = () => {
     );
   }
 
-  // Main app with sidebar
+  // Main app with sidebar for authenticated users who completed questionnaire
+  console.log('User authenticated and questionnaire complete, showing main app');
   return (
     <div className="bg-[#171b22] min-h-screen flex w-full">
       <SidebarProvider>
