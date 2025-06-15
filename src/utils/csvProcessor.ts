@@ -14,6 +14,12 @@ export interface ProcessedTrade {
   confidence?: number;
 }
 
+type FieldMatchInfo = {
+  matched: boolean;
+  matchedTo?: string;
+  header?: string;
+};
+
 export class CSVProcessor {
   static parseCSV(csvText: string): CSVRow[] {
     const lines = csvText.split('\n').filter(line => line.trim() !== '');
@@ -32,7 +38,6 @@ export class CSVProcessor {
         rows.push(row);
       }
     }
-
     return rows;
   }
 
@@ -43,7 +48,6 @@ export class CSVProcessor {
 
     for (let i = 0; i < line.length; i++) {
       const char = line[i];
-      
       if (char === '"') {
         inQuotes = !inQuotes;
       } else if (char === ',' && !inQuotes) {
@@ -53,36 +57,65 @@ export class CSVProcessor {
         current += char;
       }
     }
-    
     result.push(current);
     return result;
   }
 
+  /**
+   * New fuzzy field matcher to match any variation of expected fields.
+   */
+  static fuzzyFindFieldValue(row: CSVRow, possibleFields: string[]): string | null {
+    const lowerKeys = Object.keys(row).map(k => k.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    for (const wantedRaw of possibleFields) {
+      const wanted = wantedRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
+      for (let i = 0; i < lowerKeys.length; i++) {
+        if (
+          lowerKeys[i] === wanted ||
+          lowerKeys[i].includes(wanted) ||
+          wanted.includes(lowerKeys[i])
+        ) {
+          // Return the value by matching real key, preserving original keycase
+          const realKey = Object.keys(row)[i];
+          return row[realKey];
+        }
+      }
+    }
+    return null;
+  }
+
   static mapToTrades(rows: CSVRow[]): ProcessedTrade[] {
-    return rows.map(row => this.mapRowToTrade(row)).filter(trade => trade !== null) as ProcessedTrade[];
+    // Attempt to process every row, collect stats for debugging
+    const trades: ProcessedTrade[] = [];
+    for (const row of rows) {
+      const trade = this.mapRowToTrade(row);
+      if (trade !== null) trades.push(trade);
+    }
+    return trades;
   }
 
   static mapRowToTrade(row: CSVRow): ProcessedTrade | null {
     try {
-      // Common column mappings for different broker formats
-      const dateFields = ['Date', 'Time', 'DateTime', 'Open Time', 'Close Time', 'date', 'time'];
-      const symbolFields = ['Symbol', 'Instrument', 'Pair', 'symbol', 'instrument'];
-      const actionFields = ['Type', 'Action', 'Side', 'Buy/Sell', 'type', 'action'];
-      const volumeFields = ['Volume', 'Size', 'Quantity', 'Lots', 'volume', 'size'];
-      const priceFields = ['Price', 'Open Price', 'Close Price', 'Entry Price', 'price'];
-      const profitFields = ['Profit', 'P&L', 'PnL', 'Net P&L', 'profit', 'pnl'];
+      // Broader search field names for robustness:
+      const dateFields = ['Date', 'Time', 'DateTime', 'Open Time', 'Close Time', 'date', 'time', 'trd_date', 'tradedate'];
+      const symbolFields = ['Symbol', 'Instrument', 'Pair', 'symbol', 'instrument', 'ticker'];
+      const actionFields = ['Type', 'Action', 'Side', 'Buy/Sell', 'type', 'action', 'bs'];
+      const volumeFields = ['Volume', 'Size', 'Quantity', 'Lots', 'volume', 'size', 'qty', 'quantity', 'units'];
+      const priceFields = ['Price', 'Open Price', 'Close Price', 'Entry Price', 'price', 'executionprice'];
+      const profitFields = ['Profit', 'P&L', 'PnL', 'Net P&L', 'profit', 'pnl', 'pnl_usd', 'result', 'gain'];
 
-      const date = this.findFieldValue(row, dateFields);
-      const symbol = this.findFieldValue(row, symbolFields);
-      const action = this.findFieldValue(row, actionFields);
-      const volume = this.findFieldValue(row, volumeFields);
-      const price = this.findFieldValue(row, priceFields);
-      const profit = this.findFieldValue(row, profitFields);
+      // Use fuzzy matching on all:
+      const date = this.fuzzyFindFieldValue(row, dateFields);
+      const symbol = this.fuzzyFindFieldValue(row, symbolFields);
+      const action = this.fuzzyFindFieldValue(row, actionFields);
+      const volume = this.fuzzyFindFieldValue(row, volumeFields);
+      const price = this.fuzzyFindFieldValue(row, priceFields);
+      const profit = this.fuzzyFindFieldValue(row, profitFields);
 
       if (!date || !symbol || !action || !volume || !price) {
+        // Optionally attach debug info:
+        // console.log('Row skipped due to missing fields:', row);
         return null;
       }
-
       return {
         date: this.parseDate(date),
         symbol: symbol,
@@ -94,24 +127,18 @@ export class CSVProcessor {
         confidence: this.calculateConfidence(row)
       };
     } catch (error) {
-      console.error('Error mapping row to trade:', error, row);
+      // Optionally log bad row
+      // console.error('Error mapping row to trade:', error, row);
       return null;
     }
-  }
-
-  static findFieldValue(row: CSVRow, possibleFields: string[]): string | null {
-    for (const field of possibleFields) {
-      if (row[field] !== undefined) {
-        return row[field];
-      }
-    }
-    return null;
   }
 
   static parseDate(dateString: string): string {
     try {
       const date = new Date(dateString);
-      return date.toISOString();
+      if (!isNaN(date.getTime())) return date.toISOString();
+      // Try other formats here if needed
+      return new Date().toISOString();
     } catch {
       return new Date().toISOString();
     }
@@ -119,28 +146,34 @@ export class CSVProcessor {
 
   static normalizeAction(action: string): 'buy' | 'sell' {
     const normalizedAction = action.toLowerCase();
-    if (normalizedAction.includes('buy') || normalizedAction.includes('long')) {
+    if (normalizedAction.includes('buy') || normalizedAction.includes('long') || normalizedAction === 'b') {
       return 'buy';
     }
     return 'sell';
   }
 
   static detectEmotion(row: CSVRow): string | undefined {
-    const profit = parseFloat(this.findFieldValue(row, ['Profit', 'P&L', 'PnL']) || '0');
+    const profit = parseFloat(this.fuzzyFindFieldValue(row, ['Profit', 'P&L', 'PnL', 'pnl_usd', 'result', 'gain']) || '0');
     if (profit > 0) return 'confident';
     if (profit < 0) return 'frustrated';
     return 'neutral';
   }
 
   static calculateConfidence(row: CSVRow): number {
-    // Simple confidence calculation based on profit/loss ratio
-    const profit = parseFloat(this.findFieldValue(row, ['Profit', 'P&L', 'PnL']) || '0');
-    const volume = parseFloat(this.findFieldValue(row, ['Volume', 'Size', 'Lots']) || '1');
-    
+    const profit = parseFloat(this.fuzzyFindFieldValue(row, ['Profit', 'P&L', 'PnL', 'pnl_usd', 'result', 'gain']) || '0');
+    const volume = parseFloat(this.fuzzyFindFieldValue(row, ['Volume', 'Size', 'Lots', 'qty', 'quantity', 'units']) || '1');
     if (profit > 0) {
       return Math.min(50 + (profit / volume) * 10, 100);
     } else {
       return Math.max(50 + (profit / volume) * 10, 0);
     }
+  }
+
+  /**
+   * Add a function to get all unique headers in a sample CSV
+   */
+  static extractHeaders(rows: CSVRow[]): string[] {
+    if (!rows.length) return [];
+    return Object.keys(rows[0]);
   }
 }
