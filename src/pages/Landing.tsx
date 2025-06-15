@@ -29,25 +29,47 @@ const Landing = () => {
       return;
     }
 
+    if (password.length < 6) {
+      toast({
+        title: "Error",
+        description: "Password must be at least 6 characters long",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
     try {
       if (isSignUp) {
         await signup(email, password);
         toast({
-          title: "Account Created",
-          description: "Welcome! Let's set up your trading profile.",
+          title: "Account Created Successfully!",
+          description: "Welcome to Trading Psychology Insights. You can now start using the app.",
         });
       } else {
         await login(email, password);
         toast({
-          title: "Welcome Back",
+          title: "Welcome Back!",
           description: "Successfully logged in to your account.",
         });
       }
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Auth error:', error);
+      let errorMessage = "Please check your credentials and try again.";
+      
+      if (error.message?.includes('email_not_confirmed')) {
+        errorMessage = "Please check your email and confirm your account before signing in.";
+      } else if (error.message?.includes('invalid_credentials')) {
+        errorMessage = "Invalid email or password. Please try again.";
+      } else if (error.message?.includes('signup_disabled')) {
+        errorMessage = "Sign up is currently disabled. Please contact support.";
+      } else if (error.message?.includes('email_address_already_in_use')) {
+        errorMessage = "This email address is already registered. Try signing in instead.";
+      }
+      
       toast({
-        title: "Authentication Failed",
-        description: "Please check your credentials and try again.",
+        title: isSignUp ? "Sign Up Failed" : "Sign In Failed",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -59,17 +81,14 @@ const Landing = () => {
     setIsLoading(true);
     try {
       await loginWithGoogle();
-      toast({
-        title: "Google Authentication",
-        description: "Successfully authenticated with Google.",
-      });
-    } catch (error) {
+      // Don't show success toast here as the page will redirect
+    } catch (error: any) {
+      console.error('Google auth error:', error);
       toast({
         title: "Google Authentication Failed",
-        description: "Please try again.",
+        description: "Unable to sign in with Google. Please try again or use email/password.",
         variant: "destructive",
       });
-    } finally {
       setIsLoading(false);
     }
   };
@@ -110,6 +129,7 @@ const Landing = () => {
                   onChange={(e) => setEmail(e.target.value)}
                   className="bg-[#1c2027] border-gray-600 text-white"
                   disabled={isLoading}
+                  required
                 />
               </div>
               
@@ -124,15 +144,23 @@ const Landing = () => {
                     onChange={(e) => setPassword(e.target.value)}
                     className="bg-[#1c2027] border-gray-600 text-white pr-10"
                     disabled={isLoading}
+                    minLength={6}
+                    required
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300"
+                    disabled={isLoading}
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
+                {isSignUp && (
+                  <p className="text-xs text-gray-400">
+                    Password must be at least 6 characters long
+                  </p>
+                )}
               </div>
 
               <Button 
@@ -166,14 +194,18 @@ const Landing = () => {
                 <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
                 <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
               </svg>
-              Continue with Google
+              {isLoading ? 'Signing in...' : 'Continue with Google'}
             </Button>
 
             <div className="text-center text-sm text-gray-400">
               {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
               <button
                 type="button"
-                onClick={() => setIsSignUp(!isSignUp)}
+                onClick={() => {
+                  setIsSignUp(!isSignUp);
+                  setEmail('');
+                  setPassword('');
+                }}
                 className="text-blue-400 hover:text-blue-300 underline"
                 disabled={isLoading}
               >

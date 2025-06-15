@@ -35,114 +35,194 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
 
   // Helper to fetch profile & set user state
-  const fetchProfile = useCallback(async () => {
-    setIsLoading(true);
-
-    const { data: { session } } = await supabase.auth.getSession();
-    const user_id = session?.user?.id;
-    if (!user_id) {
-      setUser(null);
-      setIsLoading(false);
-      return;
-    }
-
+  const fetchProfile = useCallback(async (userId: string) => {
+    console.log('Fetching profile for user:', userId);
+    
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
-      .eq('id', user_id)
+      .eq('id', userId)
       .maybeSingle();
 
-    if (error || !data) {
-      setUser(null);
-      setIsLoading(false);
-    } else {
-      setUser({
-        id: data.id,
-        email: data.email,
-        name: data.name,
-        hasCompletedQuestionnaire: data.has_completed_questionnaire,
-        hasUploadedStatement: data.has_uploaded_statement,
-      });
-      setIsLoading(false);
+    if (error) {
+      console.error('Error fetching profile:', error);
+      return null;
     }
+
+    if (!data) {
+      console.log('No profile found, user may need to complete setup');
+      return null;
+    }
+
+    console.log('Profile fetched successfully:', data);
+    return {
+      id: data.id,
+      email: data.email,
+      name: data.name,
+      hasCompletedQuestionnaire: data.has_completed_questionnaire,
+      hasUploadedStatement: data.has_uploaded_statement,
+    };
   }, []);
 
   useEffect(() => {
-    // 1. Set up Supabase auth event listener
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    let mounted = true;
+
+    const initAuth = async () => {
+      try {
+        console.log('Initializing auth...');
+        
+        // Get current session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          console.error('Session error:', sessionError);
+          if (mounted) {
+            setUser(null);
+            setIsLoading(false);
+          }
+          return;
+        }
+
+        if (session?.user) {
+          console.log('Found existing session for user:', session.user.id);
+          const profile = await fetchProfile(session.user.id);
+          if (mounted) {
+            setUser(profile);
+          }
+        } else {
+          console.log('No existing session found');
+          if (mounted) {
+            setUser(null);
+          }
+        }
+      } catch (error) {
+        console.error('Auth initialization error:', error);
+        if (mounted) {
+          setUser(null);
+        }
+      } finally {
+        if (mounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed:', event, session?.user?.id);
+      
+      if (!mounted) return;
+
       if (session?.user) {
-        fetchProfile();
+        // Wait a bit for the profile to be created by the trigger
+        if (event === 'SIGNED_UP') {
+          setTimeout(async () => {
+            const profile = await fetchProfile(session.user.id);
+            if (mounted) {
+              setUser(profile);
+              setIsLoading(false);
+            }
+          }, 1000);
+        } else {
+          const profile = await fetchProfile(session.user.id);
+          setUser(profile);
+          setIsLoading(false);
+        }
       } else {
         setUser(null);
         setIsLoading(false);
       }
     });
 
-    // 2. Fetch session on initial load
-    fetchProfile();
+    initAuth();
 
     return () => {
-      listener?.subscription.unsubscribe();
+      mounted = false;
+      subscription.unsubscribe();
     };
   }, [fetchProfile]);
 
   const login = async (email: string, password: string) => {
     setIsLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    console.log('Attempting login for:', email);
+    
+    const { data, error } = await supabase.auth.signInWithPassword({ 
+      email, 
+      password 
+    });
+    
     if (error) {
       setIsLoading(false);
+      console.error('Login error:', error);
       throw error;
     }
-    await fetchProfile();
+    
+    console.log('Login successful:', data.user?.id);
   };
 
   const signup = async (email: string, password: string) => {
     setIsLoading(true);
-    const redirectUrl = `${window.location.origin}/`; // Required for Supabase signUp
-    const { error } = await supabase.auth.signUp({
+    console.log('Attempting signup for:', email);
+    
+    const redirectUrl = `${window.location.origin}/`;
+    
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         emailRedirectTo: redirectUrl,
-        data: {}, // You can provide { name } here if wanted
-      },
+        data: {
+          email: email
+        }
+      }
     });
+    
     if (error) {
       setIsLoading(false);
+      console.error('Signup error:', error);
       throw error;
     }
-    // User still needs to verify email before appearing as "logged in"
-    await fetchProfile(); // If they are already verified, get profile
+    
+    console.log('Signup successful:', data);
   };
 
   const loginWithGoogle = async () => {
     setIsLoading(true);
+    console.log('Attempting Google login...');
+    
     const redirectUrl = `${window.location.origin}/`;
+    
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: redirectUrl,
-      },
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        }
+      }
     });
+    
     if (error) {
       setIsLoading(false);
+      console.error('Google login error:', error);
       throw error;
     }
-    // The page will redirect on success/failure.
-    setIsLoading(false);
   };
 
   const logout = async () => {
     setIsLoading(true);
+    console.log('Logging out...');
+    
     await supabase.auth.signOut();
     setUser(null);
     setIsLoading(false);
   };
 
-  // Update profile data in Supabase
   const updateUser = async (updates: Partial<UserProfile>) => {
     if (!user) return;
     setIsLoading(true);
+    
     const toUpdate: Partial<any> = {};
     if ('name' in updates) toUpdate.name = updates.name;
     if ('hasCompletedQuestionnaire' in updates) toUpdate.has_completed_questionnaire = updates.hasCompletedQuestionnaire;
@@ -159,6 +239,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(false);
       throw error || new Error('Failed to update user profile');
     }
+    
     setUser({
       id: data.id,
       email: data.email,
