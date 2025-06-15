@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,14 +10,28 @@ import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from "react-router-dom";
 
 const Profile = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, isLoading } = useAuth();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [lastUpload, setLastUpload] = useState<string | null>(null);
 
   const navigate = useNavigate();
 
-  // Fetch last upload date from uploaded_statements
+  // Log user and isLoading for stuck screen diagnosis
+  React.useEffect(() => {
+    console.log('Profile page: user', user, 'isLoading', isLoading);
+  }, [user, isLoading]);
+
+  // Defensive: If auth or user info still loading, show loading (matches app style)
+  if (isLoading || !user) {
+    return (
+      <div className="min-h-screen bg-[#171b22] flex items-center justify-center">
+        <div className="text-white">Loading...</div>
+      </div>
+    );
+  }
+
+  // Fetch last upload date from uploaded_statements (safe: user is checked above)
   React.useEffect(() => {
     const fetchLastUpload = async () => {
       if (!user?.id) return setLastUpload(null);
