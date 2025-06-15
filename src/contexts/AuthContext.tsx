@@ -1,21 +1,22 @@
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 
-interface User {
+interface UserProfile {
   id: string;
   email: string;
-  name?: string;
+  name?: string | null;
   hasCompletedQuestionnaire: boolean;
   hasUploadedStatement: boolean;
 }
 
 interface AuthContextType {
-  user: User | null;
+  user: UserProfile | null;
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   logout: () => void;
-  updateUser: (updates: Partial<User>) => void;
+  updateUser: (updates: Partial<UserProfile>) => Promise<void>;
   isLoading: boolean;
 }
 
@@ -30,97 +31,142 @@ export const useAuth = () => {
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    // Check for stored user session
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
+  // Helper to fetch profile & set user state
+  const fetchProfile = useCallback(async () => {
+    setIsLoading(true);
+
+    const { data: { session } } = await supabase.auth.getSession();
+    const user_id = session?.user?.id;
+    if (!user_id) {
+      setUser(null);
+      setIsLoading(false);
+      return;
     }
-    setIsLoading(false);
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user_id)
+      .maybeSingle();
+
+    if (error || !data) {
+      setUser(null);
+      setIsLoading(false);
+    } else {
+      setUser({
+        id: data.id,
+        email: data.email,
+        name: data.name,
+        hasCompletedQuestionnaire: data.has_completed_questionnaire,
+        hasUploadedStatement: data.has_uploaded_statement,
+      });
+      setIsLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    // 1. Set up Supabase auth event listener
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        fetchProfile();
+      } else {
+        setUser(null);
+        setIsLoading(false);
+      }
+    });
+
+    // 2. Fetch session on initial load
+    fetchProfile();
+
+    return () => {
+      listener?.subscription.unsubscribe();
+    };
+  }, [fetchProfile]);
 
   const login = async (email: string, password: string) => {
     setIsLoading(true);
-    try {
-      // Simulate API call - replace with actual authentication
-      const mockUser: User = {
-        id: Date.now().toString(),
-        email,
-        hasCompletedQuestionnaire: Math.random() > 0.5, // Random for demo
-        hasUploadedStatement: Math.random() > 0.7, // Random for demo
-      };
-      
-      setUser(mockUser);
-      localStorage.setItem('user', JSON.stringify(mockUser));
-      console.log('User logged in:', mockUser);
-    } catch (error) {
-      console.error('Login failed:', error);
-      throw error;
-    } finally {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
       setIsLoading(false);
+      throw error;
     }
+    await fetchProfile();
   };
 
   const signup = async (email: string, password: string) => {
     setIsLoading(true);
-    try {
-      // Simulate API call - replace with actual authentication
-      const newUser: User = {
-        id: Date.now().toString(),
-        email,
-        hasCompletedQuestionnaire: false,
-        hasUploadedStatement: false,
-      };
-      
-      setUser(newUser);
-      localStorage.setItem('user', JSON.stringify(newUser));
-      console.log('User signed up:', newUser);
-    } catch (error) {
-      console.error('Signup failed:', error);
-      throw error;
-    } finally {
+    const redirectUrl = `${window.location.origin}/`; // Required for Supabase signUp
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: redirectUrl,
+        data: {}, // You can provide { name } here if wanted
+      },
+    });
+    if (error) {
       setIsLoading(false);
+      throw error;
     }
+    // User still needs to verify email before appearing as "logged in"
+    await fetchProfile(); // If they are already verified, get profile
   };
 
   const loginWithGoogle = async () => {
     setIsLoading(true);
-    try {
-      // Dummy Google OAuth implementation
-      const googleUser: User = {
-        id: 'google_' + Date.now().toString(),
-        email: 'user@gmail.com',
-        name: 'Google User',
-        hasCompletedQuestionnaire: false,
-        hasUploadedStatement: false,
-      };
-      
-      setUser(googleUser);
-      localStorage.setItem('user', JSON.stringify(googleUser));
-      console.log('User logged in with Google:', googleUser);
-    } catch (error) {
-      console.error('Google login failed:', error);
-      throw error;
-    } finally {
+    const redirectUrl = `${window.location.origin}/`;
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: redirectUrl,
+      },
+    });
+    if (error) {
       setIsLoading(false);
+      throw error;
     }
+    // The page will redirect on success/failure.
+    setIsLoading(false);
   };
 
-  const logout = () => {
+  const logout = async () => {
+    setIsLoading(true);
+    await supabase.auth.signOut();
     setUser(null);
-    localStorage.removeItem('user');
-    console.log('User logged out');
+    setIsLoading(false);
   };
 
-  const updateUser = (updates: Partial<User>) => {
-    if (user) {
-      const updatedUser = { ...user, ...updates };
-      setUser(updatedUser);
-      localStorage.setItem('user', JSON.stringify(updatedUser));
+  // Update profile data in Supabase
+  const updateUser = async (updates: Partial<UserProfile>) => {
+    if (!user) return;
+    setIsLoading(true);
+    const toUpdate: Partial<any> = {};
+    if ('name' in updates) toUpdate.name = updates.name;
+    if ('hasCompletedQuestionnaire' in updates) toUpdate.has_completed_questionnaire = updates.hasCompletedQuestionnaire;
+    if ('hasUploadedStatement' in updates) toUpdate.has_uploaded_statement = updates.hasUploadedStatement;
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(toUpdate)
+      .eq('id', user.id)
+      .select()
+      .single();
+
+    if (error || !data) {
+      setIsLoading(false);
+      throw error || new Error('Failed to update user profile');
     }
+    setUser({
+      id: data.id,
+      email: data.email,
+      name: data.name,
+      hasCompletedQuestionnaire: data.has_completed_questionnaire,
+      hasUploadedStatement: data.has_uploaded_statement,
+    });
+    setIsLoading(false);
   };
 
   return (
