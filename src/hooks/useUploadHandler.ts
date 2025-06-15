@@ -49,6 +49,11 @@ export const useUploadHandler = () => {
   const { extractTextLines } = usePdfTextExtract();
   const { processCsvFile } = useCsvProcessing();
 
+  // Structured logger: logs with context for debugging
+  function logWithContext(context: string, details: object = {}) {
+    console.log(`[UploadHandler:${context}]`, details);
+  }
+
   // Validation
   const validateFile = (file: File): boolean => {
     const schema = z.object({
@@ -100,8 +105,10 @@ export const useUploadHandler = () => {
 
   // Main handler
   const handleFileUpload = async (file: File) => {
+    logWithContext('handleFileUpload.start', { fileName: file.name, fileSize: file.size, fileType: file.type });
     if (!validateFile(file)) {
       setStatus(UploadStatus.Error);
+      logWithContext('validateFile.failed', { fileName: file.name });
       return;
     }
     setFileName(file.name);
@@ -119,8 +126,8 @@ export const useUploadHandler = () => {
         isPDF = true;
         pdfRawText = await extractTextLines(file);
 
-        // **New Error Handling Here:**
         if (!pdfRawText) {
+          logWithContext('pdf.extractTextLines.noText', { fileName: file.name });
           throw new Error(ERROR_MESSAGES.PDF_NO_TEXT);
         }
         if (pdfRawText.length === 0) {
@@ -131,23 +138,45 @@ export const useUploadHandler = () => {
         }
         processedData = [{ statementId: statement.id, rawText: pdfRawText.join('\n') }];
       } else {
-        const trades = await processCsvFile(file); // This returns ProcessedTrade[];
-        // Instead of assigning as FileAnalysisResult[], we only need this for DB insert.
+        logWithContext('processCsvFile.start', { fileName: file.name });
+        const trades = await processCsvFile(file);
         processedData = [];
-        // "insertedTrades" logic is correct, just pass this into file analysis summary
         let insertedTrades = null;
         if (!trades || trades.length === 0) {
+          logWithContext('processCsvFile.resultNoTrades', { fileName: file.name });
           throw new Error(ERROR_MESSAGES.NO_VALID_TRADES);
         }
-        insertedTrades = await SupabaseService.insertTrades(trades as any, statement.id);
-        if (!insertedTrades) throw new Error('Failed to save trades to database');
-
+        try {
+          insertedTrades = await SupabaseService.insertTrades(trades as any, statement.id);
+        } catch (e: any) {
+          // Enhanced: surface constraint violation and report in a user-friendly way.
+          const errorDetail = typeof e?.message === "string" ? e.message : e?.toString();
+          if (
+            errorDetail &&
+            (errorDetail.includes("duplicate key") || errorDetail.includes("violates")) // Common constraint patterns
+          ) {
+            setErrorMessage("Duplicate or invalid trade entry. Please check for duplicate trades or missing info.");
+            logWithContext('DB.ConstraintViolation', { error: errorDetail });
+            toast({
+              title: "Constraint Violation",
+              description: errorDetail,
+              variant: "destructive",
+            });
+            setStatus(UploadStatus.Error);
+            return;
+          }
+          throw e;
+        }
+        if (!insertedTrades) {
+          throw new Error('Failed to save trades to database');
+        }
         let analysis = {
           totalTrades: insertedTrades.length,
           winRate: Math.round((insertedTrades.filter((t: any) => t.profit > 0).length / insertedTrades.length) * 100),
           insights: 'Analysis completed successfully',
         };
         await SupabaseService.updateStatementStatus(statement.id, 'completed');
+        logWithContext('upload.success', { count: insertedTrades.length });
         setStatus(UploadStatus.Success);
         setResults(analysis);
         updateUser({ hasUploadedStatement: true });
@@ -161,8 +190,7 @@ export const useUploadHandler = () => {
 
       let analysis;
       if (!isPDF) {
-        // Already handled in "else { ... }" above for CSV
-        analysis = {}; // fallback
+        analysis = {};
       } else {
         analysis = {
           rawText: pdfRawText,
@@ -179,16 +207,26 @@ export const useUploadHandler = () => {
         setResults(analysis);
         updateUser({ hasUploadedStatement: true });
         invalidateData();
+        logWithContext('pdf.upload.success', { lines: pdfRawText.length });
         toast({
           title: "Upload Successful",
           description: `${file.name} has been uploaded: ${pdfRawText.length} lines extracted as text.`
         });
         return;
       }
-    } catch (error) {
+    } catch (error: any) {
       setStatus(UploadStatus.Error);
       const msg = logAndExtractMessage(error, ERROR_MESSAGES.UPLOAD_FAIL);
-      setErrorMessage(msg);
+      // Custom: Database constraint violation pretty message
+      if (
+        typeof error?.message === "string" &&
+        (error.message.includes('violates') || error.message.includes('duplicate key'))
+      ) {
+        setErrorMessage('Database constraint violated — check for duplicate or invalid trades.');
+      } else {
+        setErrorMessage(msg);
+      }
+      logWithContext('handleFileUpload.error', { error: error, message: msg });
       toast({
         title: "Upload Failed",
         description: msg,

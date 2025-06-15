@@ -42,21 +42,18 @@ export class SupabaseService {
     fileType: string
   ): Promise<UploadedStatement | null> {
     try {
-      console.log('Creating uploaded statement record...');
-      
+      console.log('[SupabaseService.createUploadedStatement]', { filename, fileSize, fileType });
       const { data: { user }, error: userError } = await supabase.auth.getUser();
-      
+
       if (userError) {
-        console.error('Authentication error:', userError);
-        throw new Error('User not authenticated. Please log in and try again.');
-      }
-      
-      if (!user) {
-        console.error('No user found in session');
+        console.error('[SupabaseService.createUploadedStatement] Authentication error:', userError);
         throw new Error('User not authenticated. Please log in and try again.');
       }
 
-      console.log('User authenticated:', user.id);
+      if (!user) {
+        console.error('[SupabaseService.createUploadedStatement] No user found in session');
+        throw new Error('User not authenticated. Please log in and try again.');
+      }
 
       const { data, error } = await supabase
         .from('uploaded_statements')
@@ -71,14 +68,13 @@ export class SupabaseService {
         .single();
 
       if (error) {
-        console.error('Database error creating uploaded statement:', error);
+        console.error('[SupabaseService.createUploadedStatement] Database error:', error);
         throw new Error(`Failed to create statement record: ${error.message}`);
       }
 
-      console.log('Statement record created successfully:', data);
       return data as UploadedStatement;
     } catch (error) {
-      console.error('Error in createUploadedStatement:', error);
+      console.error('[SupabaseService.createUploadedStatement] Error:', error);
       if (error instanceof Error) {
         throw error;
       }
@@ -92,8 +88,7 @@ export class SupabaseService {
     errorMessage?: string
   ): Promise<boolean> {
     try {
-      console.log(`Updating statement ${statementId} status to:`, status);
-      
+      console.log('[SupabaseService.updateStatementStatus]', { statementId, status, errorMessage });
       const { error } = await supabase
         .from('uploaded_statements')
         .update({
@@ -103,26 +98,24 @@ export class SupabaseService {
         .eq('id', statementId);
 
       if (error) {
-        console.error('Error updating statement status:', error);
+        console.error('[SupabaseService.updateStatementStatus] Error:', error);
         throw error;
       }
 
-      console.log('Statement status updated successfully');
       return true;
     } catch (error) {
-      console.error('Error in updateStatementStatus:', error);
+      console.error('[SupabaseService.updateStatementStatus] Error:', error);
       return false;
     }
   }
 
   static async insertTrades(trades: ProcessedTrade[], statementId?: string): Promise<Trade[] | null> {
     try {
-      console.log('Inserting trades to database...');
-      
+      console.log('[SupabaseService.insertTrades] inserting', trades.length, 'trades, statementId:', statementId);
       const { data: { user }, error: userError } = await supabase.auth.getUser();
-      
+
       if (userError || !user) {
-        console.error('Authentication error:', userError);
+        console.error('[SupabaseService.insertTrades] Authentication error:', userError);
         throw new Error('User not authenticated');
       }
 
@@ -145,15 +138,21 @@ export class SupabaseService {
         .select();
 
       if (error) {
-        console.error('Error inserting trades:', error);
+        // Enhanced: Bubble up constraint violations, like duplicates or not null, for the hook to handle with context.
+        if (
+          error.message.includes('violates') ||
+          error.message.includes('duplicate key')
+        ) {
+          throw new Error(`[ConstraintViolation] ${error.message}`);
+        }
+        console.error('[SupabaseService.insertTrades] Error inserting trades:', error);
         throw error;
       }
 
-      console.log(`Successfully inserted ${data.length} trades`);
       return data as Trade[];
     } catch (error) {
-      console.error('Error in insertTrades:', error);
-      return null;
+      console.error('[SupabaseService.insertTrades] Error:', error);
+      throw error;
     }
   }
 
