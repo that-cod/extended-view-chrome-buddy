@@ -37,51 +37,32 @@ const Upload = () => {
     return true;
   };
 
-  // Helper function to parse PDF trade statements (best effort: assumes tabular data is present in text)
-  const parsePDFFile = async (file: File): Promise<any[]> => {
+  // Helper function to extract all text lines from PDF (no structure, just raw lines)
+  const parsePDFFile = async (file: File): Promise<string[]> => {
     try {
-      // Read PDF as ArrayBuffer
       const arrayBuffer = await file.arrayBuffer();
-      // Initialize PDF.js
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      let fullText = '';
+      let lines: string[] = [];
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
-        const pageText = textContent.items.map((item: any) => item.str).join(' ');
-        fullText += pageText + '\n';
+        // Each item is a chunk of text on the page
+        const pageLines = textContent.items.map((item: any) => item.str).join(' ').split('\n');
+        // Collect & push non-empty lines
+        pageLines.forEach(line => {
+          const trimmed = line.trim();
+          if (trimmed) lines.push(trimmed);
+        });
       }
-      // "Parse" full text into rows (find lines that look like trades: crude, but lets us try)
-      // Example strategy: split lines, look for rows that contain profit/loss numbers etc
-      // Example strategy: split lines, look for rows that contain profit/loss numbers etc
-      const lines = fullText.split('\n').map(l => l.trim()).filter(Boolean);
-
-      let headerIdx = lines.findIndex(line => 
-        /date|symbol|instrument|buy|sell|profit|volume|qty|quantity/i.test(line)
-      );
-      let headers: string[] = [];
-      if (headerIdx !== -1) {
-        headers = lines[headerIdx].split(/\s{2,}|\t|,/).map(h => h.trim());
-      }
-      let tableData: any[] = [];
-      if (headerIdx !== -1 && headers.length >= 3) {
-        for (let i = headerIdx + 1; i < lines.length; i++) {
-          const cells = lines[i].split(/\s{2,}|\t|,/).map(c => c.trim());
-          if (cells.length < headers.length) continue;
-          const row: any = {};
-          headers.forEach((h, idx) => { row[h.toLowerCase()] = cells[idx] || ''; });
-          tableData.push(row);
-        }
-      }
-      return tableData;
+      return lines;
     } catch (err) {
-      console.error('Error parsing PDF:', err);
+      console.error('Error extracting PDF text:', err);
       setErrorMessage('Failed to extract data from PDF file. Please check PDF format.');
       return [];
     }
   };
 
-  // Modified file upload handler to support both CSV and PDF
+  // Modified file upload handler to support both CSV and PDF (raw PDF text version)
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -97,7 +78,8 @@ const Upload = () => {
 
     console.log('Processing file:', file.name, 'Size:', file.size, 'Type:', file.type);
 
-    let processedTrades: any[] = [];
+    let processedData: any[] = [];
+    let pdfRawText: string[] = [];
     let isPDF = false;
     try {
       // Create uploaded statement record
@@ -111,25 +93,18 @@ const Upload = () => {
 
       await SupabaseService.updateStatementStatus(statement.id, 'processing');
 
-      // Read and process file
       if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
         isPDF = true;
-        const tableData = await parsePDFFile(file);
-        if (!tableData || tableData.length === 0) throw new Error('No valid data found in PDF file');
-        
-        // PDF trade mapping (attempt to map tableData fields to "trade" shape)
-        // As in CSVProcessor.mapToTrades, map to the fields required by your schema.
-        processedTrades = tableData.map(row => {
-          // Try to guess the fields based on column headers
-          return {
-            date: row['date'] || row['date/time'] || row['datetime'],
-            symbol: row['symbol'] || row['instrument'],
-            action: (row['action'] || row['type'] || row['buy/sell'] || '').toLowerCase().includes('buy') ? 'buy' : 'sell',
-            volume: parseFloat(row['volume'] || row['qty'] || row['quantity'] || '0'),
-            price: parseFloat(row['price'] || row['open'] || '0'),
-            profit: parseFloat(row['profit'] || row['p/l'] || row['net'] || '0')
-          };
-        }).filter(t => t.date && t.symbol && t.action && !isNaN(t.volume) && !isNaN(t.price) && !isNaN(t.profit));
+        // Just extract all lines of text from the PDF, don't map to trade fields
+        pdfRawText = await parsePDFFile(file);
+        if (!pdfRawText || pdfRawText.length === 0) throw new Error('No data found in PDF file');
+
+        // Option A: Save as one "raw" text blob (better for non-structured parsing)
+        processedData = [{ statementId: statement.id, rawText: pdfRawText.join('\n') }];
+        // Option B: Or if you want, each line as a record (less common)
+        // processedData = pdfRawText.map(line => ({ statementId: statement.id, rawText: line }));
+
+        // No insertion to trades table since we have no structured fields, just mark complete
       } else {
         // CSV flow (original)
         const csvText = await file.text();
@@ -138,48 +113,61 @@ const Upload = () => {
         const csvRows = CSVProcessor.parseCSV(csvText);
         if (csvRows.length === 0) throw new Error('No valid data found in CSV file');
 
-        processedTrades = CSVProcessor.mapToTrades(csvRows);
+        processedData = CSVProcessor.mapToTrades(csvRows);
       }
 
-      console.log('Processed trades:', processedTrades.length);
+      console.log('Processed data:', processedData.length);
 
-      if (processedTrades.length === 0) {
-        throw new Error('No valid trades found in file. Please check the format.');
+      // Insert trades only if we have structured data (CSV)
+      let insertedTrades = null;
+      if (!isPDF) {
+        if (processedData.length === 0) {
+          throw new Error('No valid trades found in file. Please check the format.');
+        }
+
+        insertedTrades = await SupabaseService.insertTrades(processedData, statement.id);
+
+        if (!insertedTrades) throw new Error('Failed to save trades to database');
       }
 
-      // Insert trades into database
-      const insertedTrades = await SupabaseService.insertTrades(processedTrades, statement.id);
-
-      if (!insertedTrades) throw new Error('Failed to save trades to database');
-
-      // Run analysis using edge function
-      const { data: analysis, error: analysisError } = await supabase.functions.invoke('analyze-trading-data', {
-        body: { statementId: statement.id }
-      });
-
-      if (analysisError) {
-        console.error('Analysis error:', analysisError);
-        // Don't fail the upload if analysis fails
+      // Run analysis for CSV, but for PDF just show raw text results
+      let analysis;
+      if (!isPDF) {
+        const res = await supabase.functions.invoke('analyze-trading-data', {
+          body: { statementId: statement.id }
+        });
+        analysis = res.data || {
+          totalTrades: insertedTrades.length,
+          winRate: Math.round((insertedTrades.filter(t => t.profit > 0).length / insertedTrades.length) * 100),
+          insights: 'Analysis completed successfully'
+        };
+      } else {
+        analysis = {
+          rawText: pdfRawText,
+          totalLines: pdfRawText.length,
+          insights: [
+            'All text extracted from PDF.',
+            'No structured trade parsing applied. Please analyze lines manually.'
+          ]
+        }
       }
 
       await SupabaseService.updateStatementStatus(statement.id, 'completed');
 
       setUploadStatus('success');
-      setAnalysisResults(analysis || {
-        totalTrades: insertedTrades.length,
-        winRate: Math.round((insertedTrades.filter(t => t.profit > 0).length / insertedTrades.length) * 100),
-        insights: 'Analysis completed successfully'
-      });
+      setAnalysisResults(analysis);
 
       updateUser({ hasUploadedStatement: true });
       invalidateData();
 
       toast({
         title: "Upload Successful",
-        description: `${file.name} has been processed. Found ${insertedTrades.length} trades.`,
+        description: isPDF
+          ? `${file.name} has been uploaded and its text extracted.`
+          : `${file.name} has been processed. Found ${insertedTrades.length} trades.`,
       });
 
-      console.log('Upload successful. Trades inserted:', insertedTrades.length);
+      console.log('Upload successful. Data processed:', processedData.length);
     } catch (error) {
       console.error('Upload error:', error);
       setUploadStatus('error');
