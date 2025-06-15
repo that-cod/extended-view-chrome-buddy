@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Landing from "./pages/Landing";
@@ -20,8 +20,9 @@ const queryClient = new QueryClient();
 
 const AppContent = () => {
   const { user, isLoading } = useAuth();
+  const location = useLocation();
 
-  console.log('AppContent render - isLoading:', isLoading, 'user:', user?.id, 'hasCompletedQuestionnaire:', user?.hasCompletedQuestionnaire);
+  console.log('AppContent render - Route:', location.pathname, 'isLoading:', isLoading, 'user:', user?.id, 'hasCompletedQuestionnaire:', user?.hasCompletedQuestionnaire);
 
   // Show loading while auth is being determined
   if (isLoading) {
@@ -35,9 +36,9 @@ const AppContent = () => {
     );
   }
 
-  // If user is not authenticated, show landing page
+  // If user is not authenticated, only allow landing page
   if (!user) {
-    console.log('No user found, redirecting to landing');
+    console.log('No user found, showing landing page or redirecting');
     return (
       <Routes>
         <Route path="/landing" element={<Landing />} />
@@ -46,9 +47,9 @@ const AppContent = () => {
     );
   }
 
-  // If user hasn't completed questionnaire, redirect to questionnaire
+  // If user hasn't completed questionnaire, only allow questionnaire
   if (!user.hasCompletedQuestionnaire) {
-    console.log('User has not completed questionnaire, redirecting');
+    console.log('User has not completed questionnaire, showing questionnaire or redirecting');
     return (
       <Routes>
         <Route path="/questionnaire" element={<Questionnaire />} />

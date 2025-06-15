@@ -14,27 +14,27 @@ export const useAuthState = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchProfile = useCallback(async (userId: string): Promise<UserProfile | null> => {
-    console.log('Fetching profile for user:', userId);
+  const createProfileIfMissing = useCallback(async (userId: string, email: string): Promise<UserProfile | null> => {
+    console.log('Creating missing profile for user:', userId);
     
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
+        .insert({
+          id: userId,
+          email: email,
+          name: null,
+          has_completed_questionnaire: false,
+          has_uploaded_statement: false,
+        })
+        .select()
+        .single();
 
       if (error) {
-        console.error('Error fetching profile:', error);
+        console.error('Error creating profile:', error);
         return null;
       }
 
-      if (!data) {
-        console.log('No profile found, user may need to complete setup');
-        return null;
-      }
-
-      console.log('Profile fetched successfully:', data);
       return {
         id: data.id,
         email: data.email,
@@ -43,19 +43,65 @@ export const useAuthState = () => {
         hasUploadedStatement: data.has_uploaded_statement,
       };
     } catch (error) {
-      console.error('Error in fetchProfile:', error);
+      console.error('Error in createProfileIfMissing:', error);
       return null;
     }
   }, []);
+
+  const fetchProfileWithTimeout = useCallback(async (userId: string, email: string): Promise<UserProfile | null> => {
+    console.log('Fetching profile with timeout for user:', userId);
+    
+    const timeoutPromise = new Promise<null>((_, reject) => {
+      setTimeout(() => reject(new Error('Profile fetch timeout')), 10000);
+    });
+
+    const fetchPromise = async (): Promise<UserProfile | null> => {
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .maybeSingle();
+
+        if (error) {
+          console.error('Error fetching profile:', error);
+          return await createProfileIfMissing(userId, email);
+        }
+
+        if (!data) {
+          console.log('No profile found, creating one');
+          return await createProfileIfMissing(userId, email);
+        }
+
+        console.log('Profile fetched successfully:', data);
+        return {
+          id: data.id,
+          email: data.email,
+          name: data.name,
+          hasCompletedQuestionnaire: data.has_completed_questionnaire,
+          hasUploadedStatement: data.has_uploaded_statement,
+        };
+      } catch (error) {
+        console.error('Error in fetchProfile:', error);
+        return await createProfileIfMissing(userId, email);
+      }
+    };
+
+    try {
+      return await Promise.race([fetchPromise(), timeoutPromise]);
+    } catch (error) {
+      console.error('Profile fetch timed out, creating fallback profile');
+      return await createProfileIfMissing(userId, email);
+    }
+  }, [createProfileIfMissing]);
 
   useEffect(() => {
     let mounted = true;
 
     const initializeAuth = async () => {
       try {
-        console.log('Initializing auth state...');
+        console.log('Starting auth initialization...');
         
-        // Get current session
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
@@ -68,8 +114,8 @@ export const useAuthState = () => {
         }
 
         if (session?.user) {
-          console.log('Found existing session, fetching profile...');
-          const profile = await fetchProfile(session.user.id);
+          console.log('Found existing session for user:', session.user.id);
+          const profile = await fetchProfileWithTimeout(session.user.id, session.user.email || '');
           if (mounted) {
             setUser(profile);
             setIsLoading(false);
@@ -90,16 +136,15 @@ export const useAuthState = () => {
       }
     };
 
-    // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed:', event, session?.user?.id);
+      console.log('Auth state changed:', event, 'User ID:', session?.user?.id);
       
       if (!mounted) return;
 
       try {
         if (session?.user) {
           console.log('User signed in, fetching profile...');
-          const profile = await fetchProfile(session.user.id);
+          const profile = await fetchProfileWithTimeout(session.user.id, session.user.email || '');
           setUser(profile);
         } else {
           console.log('User signed out');
@@ -113,14 +158,13 @@ export const useAuthState = () => {
       }
     });
 
-    // Initialize auth
     initializeAuth();
 
     return () => {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [fetchProfile]);
+  }, [fetchProfileWithTimeout]);
 
   const updateUser = async (updates: Partial<UserProfile>) => {
     if (!user) {
