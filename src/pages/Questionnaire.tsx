@@ -14,8 +14,9 @@ import { QuestionnaireService, QuestionnaireData } from '@/services/questionnair
 const Questionnaire = () => {
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const { updateUser, user } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasLoadedData, setHasLoadedData] = useState(false);
+  const { updateUser, user, isLoading: authLoading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
   
@@ -47,21 +48,57 @@ const Questionnaire = () => {
   // Load existing questionnaire data if user has completed it
   useEffect(() => {
     const loadExistingData = async () => {
-      if (user?.hasCompletedQuestionnaire) {
-        console.log('User has completed questionnaire, loading existing data...');
-        const existingData = await QuestionnaireService.getQuestionnaireResponse();
-        if (existingData) {
-          setFormData(existingData);
-          console.log('Loaded existing questionnaire data:', existingData);
-        }
+      console.log('Starting to load questionnaire data...');
+      console.log('Auth loading:', authLoading, 'User:', user?.id, 'Has completed:', user?.hasCompletedQuestionnaire);
+      
+      // Don't proceed if auth is still loading
+      if (authLoading) {
+        console.log('Auth still loading, waiting...');
+        return;
       }
-      setIsLoading(false);
+
+      // If no user, we're done loading (they need to log in)
+      if (!user) {
+        console.log('No user found, finishing load');
+        setIsLoading(false);
+        setHasLoadedData(true);
+        return;
+      }
+
+      setIsLoading(true);
+      
+      try {
+        if (user.hasCompletedQuestionnaire) {
+          console.log('User has completed questionnaire, loading existing data...');
+          const existingData = await QuestionnaireService.getQuestionnaireResponse();
+          if (existingData) {
+            setFormData(existingData);
+            console.log('Loaded existing questionnaire data:', existingData);
+          } else {
+            console.log('No existing data found despite completion flag');
+          }
+        } else {
+          console.log('User has not completed questionnaire, using default data');
+        }
+      } catch (error) {
+        console.error('Error loading questionnaire data:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load your previous responses. Starting fresh.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoading(false);
+        setHasLoadedData(true);
+        console.log('Finished loading questionnaire data');
+      }
     };
 
-    if (user) {
+    // Only load data once when user state is settled
+    if (!hasLoadedData) {
       loadExistingData();
     }
-  }, [user]);
+  }, [user, authLoading, hasLoadedData, toast]);
 
   const handleArrayToggle = (field: keyof QuestionnaireData, value: string) => {
     setFormData(prev => ({
@@ -492,10 +529,25 @@ const Questionnaire = () => {
     }
   };
 
-  if (isLoading) {
+  // Show loading only while auth is loading or while we're actively loading questionnaire data
+  if (authLoading || isLoading) {
     return (
       <div className="min-h-screen bg-[#171b22] p-4 flex items-center justify-center">
-        <div className="text-white">Loading questionnaire...</div>
+        <div className="text-white">
+          {authLoading ? 'Checking authentication...' : 'Loading questionnaire...'}
+        </div>
+      </div>
+    );
+  }
+
+  // If user is not authenticated, redirect or show login message
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-[#171b22] p-4 flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-white mb-4">Authentication Required</h1>
+          <p className="text-gray-400">Please log in to complete your trading profile.</p>
+        </div>
       </div>
     );
   }
