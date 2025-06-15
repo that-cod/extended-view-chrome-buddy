@@ -1,4 +1,3 @@
-
 import { ApiResponse, TradingData } from '@/types/trading';
 
 const API_BASE_URL = 'https://server-production-2cd5d.up.railway.app';
@@ -41,9 +40,12 @@ class TradingAPI {
       const formData = new FormData();
       formData.append('file', file);
       
+      // Enhanced logging to debug endpoint
       console.log('Uploading file:', file.name, 'Size:', file.size, 'Type:', file.type);
-      
-      const response = await fetch(`${API_BASE_URL}/trades/upload`, {
+      console.log('POSTing to endpoint:', `${API_BASE_URL}/trades/uploadTrades`);
+
+      // Most APIs use /uploadTrades or /import, not just /upload
+      const response = await fetch(`${API_BASE_URL}/trades/uploadTrades`, {
         method: 'POST',
         headers: {
           'x-api-key': API_KEY,
