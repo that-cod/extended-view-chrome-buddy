@@ -11,19 +11,18 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import {
-  CircleArrowUp,
-  CircleArrowDown,
-  ChevronDown,
-  ChevronUp
+  Home,
+  Upload as UploadIcon,
+  BookOpen,
+  User
 } from "lucide-react";
 import { useLocation, Link } from "react-router-dom";
 
-// Edit or add icons/routes as needed
 const items = [
-  { title: "Dashboard", url: "/", icon: CircleArrowUp },
-  { title: "Upload", url: "/upload", icon: CircleArrowDown },
-  { title: "Journal", url: "/journal", icon: ChevronDown },
-  { title: "Profile", url: "/profile", icon: ChevronUp },
+  { title: "Dashboard", url: "/", icon: Home },
+  { title: "Upload", url: "/upload", icon: UploadIcon },
+  { title: "Journal", url: "/journal", icon: BookOpen },
+  { title: "Profile", url: "/profile", icon: User },
 ];
 
 export default function AppSidebar() {
@@ -32,7 +31,7 @@ export default function AppSidebar() {
     <Sidebar>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Navigation</SidebarGroupLabel>
+          <SidebarGroupLabel>Trader Behavioral Insights</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {items.map((item) => (
