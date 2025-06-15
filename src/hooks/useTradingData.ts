@@ -28,8 +28,9 @@ export const useTradingData = () => {
       
       return processedData;
     },
-    refetchInterval: 5 * 60 * 1000, // Refetch every 5 minutes
-    staleTime: 2 * 60 * 1000, // Consider data stale after 2 minutes
+    // REMOVE auto refetch and staleTime - now manual refresh only
+    // refetchInterval: 5 * 60 * 1000, 
+    // staleTime: 2 * 60 * 1000, 
   });
 
   const refreshData = () => {
@@ -49,3 +50,4 @@ export const useTradingData = () => {
     invalidateData,
   };
 };
+
