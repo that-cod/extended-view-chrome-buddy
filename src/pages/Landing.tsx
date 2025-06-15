@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,6 +6,8 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Eye, EyeOff } from 'lucide-react';
+import { Mail } from "lucide-react";
+import ContactEmailModal from "@/components/ui/ContactEmailModal";
 
 const Landing = () => {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -14,6 +15,7 @@ const Landing = () => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [showContact, setShowContact] = useState(false);
   
   const { login, signup, loginWithGoogle } = useAuth();
   const { toast } = useToast();
@@ -97,14 +99,26 @@ const Landing = () => {
     <div className="min-h-screen bg-[#171b22] flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">
-            Trading Psychology Insights
-          </h1>
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <h1 className="text-3xl font-bold text-white">
+              NevUp
+            </h1>
+            <Button
+              type="button"
+              variant="outline"
+              className="border-gray-600 text-gray-300 hover:bg-gray-700 px-2 py-1 h-auto"
+              onClick={() => setShowContact(true)}
+              style={{lineHeight:1.1, fontSize:"0.9rem"}}
+            >
+              <Mail className="h-4 w-4 mr-1" />
+              Contact Us
+            </Button>
+          </div>
           <p className="text-gray-400">
             Analyze your emotional patterns and improve your trading decisions
           </p>
         </div>
-
+        {showContact && <ContactEmailModal open={showContact} onOpenChange={setShowContact} />}
         <Card className="bg-[#232833] border-gray-700">
           <CardHeader>
             <CardTitle className="text-white text-center">

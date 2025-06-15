@@ -1,5 +1,5 @@
 
-import React from "react";
+import React, { useState } from "react";
 import {
   Sidebar,
   SidebarContent,
@@ -16,11 +16,13 @@ import {
   Upload as UploadIcon,
   BookOpen,
   User,
-  LogOut
+  LogOut,
+  Mail
 } from "lucide-react";
 import { useLocation, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
+import ContactEmailModal from "./ui/ContactEmailModal";
 
 const items = [
   { title: "Dashboard", url: "/", icon: Home },
@@ -32,6 +34,7 @@ const items = [
 export default function AppSidebar() {
   const location = useLocation();
   const { user, logout } = useAuth();
+  const [showContact, setShowContact] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -41,7 +44,7 @@ export default function AppSidebar() {
     <Sidebar>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Trading Psychology Insights</SidebarGroupLabel>
+          <SidebarGroupLabel>NevUp</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {items.map((item) => (
@@ -73,11 +76,23 @@ export default function AppSidebar() {
             onClick={handleLogout}
             variant="outline" 
             size="sm" 
-            className="w-full border-gray-600 text-gray-300 hover:bg-gray-700"
+            className="w-full mb-2 border-gray-600 text-gray-300 hover:bg-gray-700"
           >
             <LogOut className="w-4 h-4 mr-2" />
             Sign Out
           </Button>
+          <Button 
+            onClick={() => setShowContact(true)}
+            variant="outline"
+            size="sm"
+            className="w-full border-gray-600 text-gray-300 hover:bg-gray-700 mt-1"
+          >
+            <Mail className="w-4 h-4 mr-2" />
+            Contact Us
+          </Button>
+          {showContact && (
+            <ContactEmailModal open={showContact} onOpenChange={setShowContact} />
+          )}
         </div>
       </SidebarFooter>
     </Sidebar>
