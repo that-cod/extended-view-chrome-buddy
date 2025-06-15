@@ -9,14 +9,18 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarFooter,
 } from "@/components/ui/sidebar";
 import {
   Home,
   Upload as UploadIcon,
   BookOpen,
-  User
+  User,
+  LogOut
 } from "lucide-react";
 import { useLocation, Link } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/button";
 
 const items = [
   { title: "Dashboard", url: "/", icon: Home },
@@ -27,11 +31,17 @@ const items = [
 
 export default function AppSidebar() {
   const location = useLocation();
+  const { user, logout } = useAuth();
+
+  const handleLogout = () => {
+    logout();
+  };
+
   return (
     <Sidebar>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Trader Behavioral Insights</SidebarGroupLabel>
+          <SidebarGroupLabel>Trading Psychology Insights</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {items.map((item) => (
@@ -48,6 +58,28 @@ export default function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+      
+      <SidebarFooter>
+        <div className="p-4 border-t border-gray-700">
+          <div className="mb-3">
+            <div className="text-sm font-medium text-white">
+              {user?.name || user?.email}
+            </div>
+            <div className="text-xs text-gray-400">
+              {user?.email}
+            </div>
+          </div>
+          <Button 
+            onClick={handleLogout}
+            variant="outline" 
+            size="sm" 
+            className="w-full border-gray-600 text-gray-300 hover:bg-gray-700"
+          >
+            <LogOut className="w-4 h-4 mr-2" />
+            Sign Out
+          </Button>
+        </div>
+      </SidebarFooter>
     </Sidebar>
   );
 }

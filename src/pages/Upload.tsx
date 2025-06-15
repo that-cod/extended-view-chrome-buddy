@@ -5,6 +5,7 @@ import { Upload as UploadIcon, FileText, CheckCircle, AlertCircle } from 'lucide
 import { tradingAPI } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
 import { useTradingData } from '@/hooks/useTradingData';
+import { useAuth } from '@/contexts/AuthContext';
 
 const Upload = () => {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
@@ -12,6 +13,7 @@ const Upload = () => {
   const [analysisResults, setAnalysisResults] = useState<any>(null);
   const { toast } = useToast();
   const { invalidateData } = useTradingData();
+  const { updateUser } = useAuth();
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -29,7 +31,8 @@ const Upload = () => {
         setUploadStatus('success');
         setAnalysisResults(response.data);
         
-        // Invalidate trading data to refresh dashboard
+        updateUser({ hasUploadedStatement: true });
+        
         invalidateData();
         
         toast({
