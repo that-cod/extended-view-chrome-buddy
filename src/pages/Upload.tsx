@@ -230,7 +230,7 @@ const Upload = () => {
                 <p className="text-sm text-gray-300">{analysisResults.insights}</p>
               </div>
             )}
-          </Content>
+          </CardContent>
         </Card>
       )}
     </div>
