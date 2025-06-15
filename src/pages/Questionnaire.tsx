@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -322,7 +323,7 @@ const Questionnaire = () => {
                       checked={market.checked}
                       onCheckedChange={(checked) => {
                         const newMarkets = [...markets];
-                        newMarkets[index].checked = checked || false;
+                        newMarkets[index].checked = Boolean(checked);
                         setMarkets(newMarkets);
 
                         const selectedMarkets = newMarkets
@@ -384,7 +385,7 @@ const Questionnaire = () => {
                       checked={challenge.checked}
                       onCheckedChange={(checked) => {
                         const newChallenges = [...emotionalChallenges];
-                        newChallenges[index].checked = checked || false;
+                        newChallenges[index].checked = Boolean(checked);
                         setEmotionalChallenges(newChallenges);
 
                         const selectedChallenges = newChallenges
@@ -475,7 +476,7 @@ const Questionnaire = () => {
                       checked={technique.checked}
                       onCheckedChange={(checked) => {
                         const newTechniques = [...emotionManagement];
-                        newTechniques[index].checked = checked || false;
+                        newTechniques[index].checked = Boolean(checked);
                         setEmotionManagement(newTechniques);
 
                         const selectedTechniques = newTechniques
@@ -501,7 +502,7 @@ const Questionnaire = () => {
                       checked={goal.checked}
                       onCheckedChange={(checked) => {
                         const newGoals = [...tradingGoals];
-                        newGoals[index].checked = checked || false;
+                        newGoals[index].checked = Boolean(checked);
                         setTradingGoals(newGoals);
 
                         const selectedGoals = newGoals
@@ -543,7 +544,7 @@ const Questionnaire = () => {
                       checked={feature.checked}
                       onCheckedChange={(checked) => {
                         const newFeatures = [...helpfulFeatures];
-                        newFeatures[index].checked = checked || false;
+                        newFeatures[index].checked = Boolean(checked);
                         setHelpfulFeatures(newFeatures);
 
                         const selectedFeatures = newFeatures
