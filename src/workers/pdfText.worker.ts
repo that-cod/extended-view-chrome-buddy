@@ -2,24 +2,22 @@
 // Web Worker to extract text from PDF
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Type guard to check TextItem
-function isTextItem(item: any): item is { str: string } {
-  return typeof item === 'object' && item !== null && 'str' in item && typeof item.str === 'string';
+function isTextItem(item: unknown): item is { str: string } {
+  return typeof item === 'object' && item !== null && 'str' in item && typeof (item as any).str === 'string';
 }
 
-self.onmessage = async (e) => {
+self.onmessage = async (e: MessageEvent<{ fileBuffer: ArrayBuffer }>) => {
   const { fileBuffer } = e.data;
   try {
-    // Setup workerSrc for PDF.js, as in main setup
     // @ts-ignore
     pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.mjs';
 
     const pdf = await pdfjsLib.getDocument({ data: fileBuffer }).promise;
-    let lines = [];
+    let lines: string[] = [];
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const textContent = await page.getTextContent();
-      const pageLines = textContent.items
+      const pageLines = (textContent.items as unknown[])
         .filter(isTextItem)
         .map((item) => item.str)
         .join(' ')
@@ -29,7 +27,8 @@ self.onmessage = async (e) => {
       lines.push(...pageLines);
     }
     self.postMessage({ success: true, lines });
-  } catch (error) {
-    self.postMessage({ success: false, error: error && error.message ? error.message : String(error) });
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    self.postMessage({ success: false, error: errorMessage });
   }
 };

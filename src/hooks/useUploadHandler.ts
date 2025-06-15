@@ -1,3 +1,4 @@
+
 import { useToast } from "@/hooks/use-toast";
 import { useTradingData } from '@/hooks/useTradingData';
 import { useAuth } from '@/contexts/AuthContext';
@@ -7,13 +8,23 @@ import { usePdfTextExtract } from './usePdfTextExtract';
 import { useCsvProcessing } from './useCsvProcessing';
 import { useState } from 'react';
 import { z } from "zod";
+import { ALLOWED_MIME_TYPES, MAX_FILE_SIZE_BYTES, ERROR_MESSAGES, UploadStatus } from "@/constants/app";
+import { logAndExtractMessage } from "@/utils/errorHandler";
 
-type UploadStatus = 'idle' | 'uploading' | 'success' | 'error';
+// Better types
+type FileAnalysisResult = {
+  statementId?: string;
+  rawText?: string;
+} | {
+  insights?: string | string[];
+  rawText?: string[];
+  totalLines?: number;
+};
 
 export const useUploadHandler = () => {
-  const [status, setStatus] = useState<UploadStatus>('idle');
+  const [status, setStatus] = useState<UploadStatus>(UploadStatus.Idle);
   const [fileName, setFileName] = useState<string>('');
-  const [results, setResults] = useState<any>(null);
+  const [results, setResults] = useState<FileAnalysisResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isExporting, setIsExporting] = useState(false);
 
@@ -24,26 +35,17 @@ export const useUploadHandler = () => {
   const { extractTextLines } = usePdfTextExtract();
   const { processCsvFile } = useCsvProcessing();
 
-  // Enhanced file validation schema
-  const AllowedMimeTypes = [
-    "text/csv",
-    "application/pdf",
-    "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-  ];
-  const MAX_FILE_SIZE = 10 * 1024 * 1024;
-
   // Validation
   const validateFile = (file: File): boolean => {
     const schema = z.object({
       name: z.string().min(1),
-      size: z.number().max(MAX_FILE_SIZE),
+      size: z.number().max(MAX_FILE_SIZE_BYTES, { message: ERROR_MESSAGES.FILE_SIZE }),
       type: z.string().refine(
         (val) =>
-          AllowedMimeTypes.includes(val) ||
+          ALLOWED_MIME_TYPES.includes(val) ||
           file.name.toLowerCase().endsWith(".csv") ||
           file.name.toLowerCase().endsWith(".pdf"),
-        { message: "File must be a CSV or PDF." }
+        { message: ERROR_MESSAGES.FILE_TYPE }
       ),
     });
 
@@ -54,29 +56,27 @@ export const useUploadHandler = () => {
     });
 
     if (!result.success) {
-      setErrorMessage(
-        result.error.errors[0]?.message || "Please upload a valid CSV or PDF file"
-      );
+      setErrorMessage(result.error.errors[0]?.message || ERROR_MESSAGES.FILE_TYPE);
       return false;
     }
 
-    if (file.size > MAX_FILE_SIZE) {
-      setErrorMessage("File size must be less than 10MB");
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      setErrorMessage(ERROR_MESSAGES.FILE_SIZE);
       return false;
     }
 
-    // Check CSV file extra: ensure it has minimum required lines (header + 1 data row) if possible
+    // CSV: check for minimum lines (header + at least 1 row)
     if (
       (file.type.includes("csv") || file.name.toLowerCase().endsWith(".csv")) &&
       typeof FileReader !== "undefined"
     ) {
       const reader = new FileReader();
-      reader.onload = (e: any) => {
-        const text = e.target.result as string;
+      reader.onload = (e: ProgressEvent<FileReader>) => {
+        const text = (e.target?.result as string) || "";
         const lines = text.split("\n").filter((l) => l.trim() !== "");
         if (lines.length < 2) {
-          setErrorMessage("CSV file must contain at least one data row.");
-          setStatus("error");
+          setErrorMessage(ERROR_MESSAGES.CSV_MIN_ROWS);
+          setStatus(UploadStatus.Error);
         }
       };
       reader.readAsText(file);
@@ -87,13 +87,13 @@ export const useUploadHandler = () => {
   // Main handler
   const handleFileUpload = async (file: File) => {
     if (!validateFile(file)) {
-      setStatus('error');
+      setStatus(UploadStatus.Error);
       return;
     }
     setFileName(file.name);
-    setStatus('uploading');
+    setStatus(UploadStatus.Uploading);
     setErrorMessage('');
-    let processedData: any[] = [];
+    let processedData: FileAnalysisResult[] = [];
     let pdfRawText: string[] = [];
     let isPDF = false;
     try {
@@ -106,23 +106,15 @@ export const useUploadHandler = () => {
         pdfRawText = await extractTextLines(file);
 
         // **New Error Handling Here:**
-        if (pdfRawText === undefined || pdfRawText === null) {
-          throw new Error('Could not read any text from PDF file. Please try a different PDF or export.');
+        if (!pdfRawText) {
+          throw new Error(ERROR_MESSAGES.PDF_NO_TEXT);
         }
-        // If extracted but zero or nearly zero lines, customized feedback
         if (pdfRawText.length === 0) {
-          throw new Error(
-            'No readable text found in your PDF. Check if the PDF is a scanned document or try exporting a fresh copy from your broker.'
-          );
+          throw new Error(ERROR_MESSAGES.PDF_NO_TEXT);
         }
-        // If all are whitespace/empty (should not happen now):
         if (pdfRawText.every(line => !line.trim())) {
-          throw new Error(
-            'PDF extracted but contains only blank or whitespace lines. Try exporting a new PDF statement from your broker.'
-          );
+          throw new Error(ERROR_MESSAGES.PDF_ONLY_WHITESPACE);
         }
-
-        // We always pass raw text (not structured table!) for PDF
         processedData = [{ statementId: statement.id, rawText: pdfRawText.join('\n') }];
       } else {
         processedData = await processCsvFile(file);
@@ -130,10 +122,10 @@ export const useUploadHandler = () => {
 
       let insertedTrades = null;
       if (!isPDF) {
-        if (processedData.length === 0) {
-          throw new Error('No valid trades found in file. Please check the format.');
+        if (!processedData || processedData.length === 0) {
+          throw new Error(ERROR_MESSAGES.NO_VALID_TRADES);
         }
-        insertedTrades = await SupabaseService.insertTrades(processedData, statement.id);
+        insertedTrades = await SupabaseService.insertTrades(processedData as any, statement.id);
         if (!insertedTrades) throw new Error('Failed to save trades to database');
       }
 
@@ -144,7 +136,7 @@ export const useUploadHandler = () => {
         });
         analysis = res.data || {
           totalTrades: insertedTrades.length,
-          winRate: Math.round((insertedTrades.filter(t => t.profit > 0).length / insertedTrades.length) * 100),
+          winRate: Math.round((insertedTrades.filter((t: any) => t.profit > 0).length / insertedTrades.length) * 100),
           insights: 'Analysis completed successfully'
         };
       } else {
@@ -161,7 +153,7 @@ export const useUploadHandler = () => {
       }
 
       await SupabaseService.updateStatementStatus(statement.id, 'completed');
-      setStatus('success');
+      setStatus(UploadStatus.Success);
       setResults(analysis);
       updateUser({ hasUploadedStatement: true });
       invalidateData();
@@ -169,17 +161,11 @@ export const useUploadHandler = () => {
         title: "Upload Successful",
         description: isPDF
           ? `${file.name} has been uploaded: ${pdfRawText.length} lines extracted as text.`
-          : `${file.name} has been processed. Found ${insertedTrades.length} trades.`,
+          : `${file.name} has been processed. Found ${(insertedTrades || []).length} trades.`,
       });
     } catch (error) {
-      setStatus('error');
-      // Use more descriptive error message for PDF and others. Fallback if not Error instance
-      let msg =
-        error instanceof Error
-          ? error.message
-          : typeof error === 'string'
-          ? error
-          : 'Failed to upload and process file';
+      setStatus(UploadStatus.Error);
+      const msg = logAndExtractMessage(error, ERROR_MESSAGES.UPLOAD_FAIL);
       setErrorMessage(msg);
       toast({
         title: "Upload Failed",
@@ -195,7 +181,7 @@ export const useUploadHandler = () => {
     try {
       const exportData = await SupabaseService.exportData(format);
       if (!exportData) {
-        throw new Error('No data to export');
+        throw new Error(ERROR_MESSAGES.NO_EXPORT_DATA);
       }
       const blob = new Blob([exportData], {
         type: format === 'json' ? 'application/json' : 'text/csv'
@@ -214,9 +200,10 @@ export const useUploadHandler = () => {
         description: `Your trading data has been exported as ${format.toUpperCase()}.`,
       });
     } catch (error) {
+      const msg = logAndExtractMessage(error, "Failed to export data");
       toast({
         title: "Export Failed",
-        description: error instanceof Error ? error.message : 'Failed to export data',
+        description: msg,
         variant: "destructive",
       });
     } finally {
@@ -225,7 +212,7 @@ export const useUploadHandler = () => {
   };
 
   const resetUpload = () => {
-    setStatus('idle');
+    setStatus(UploadStatus.Idle);
     setFileName('');
     setResults(null);
     setErrorMessage('');

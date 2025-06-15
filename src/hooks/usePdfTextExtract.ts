@@ -1,29 +1,27 @@
+
 import * as pdfjsLib from 'pdfjs-dist';
+import { PDF_WORKER_SRC } from '@/constants/app';
 
 // Set up workerSrc for PDF.js for Vite (use .mjs for pdfjs-dist >4)
-// This must match the correct worker file included in Vite config
 if ((window as any).Worker) {
   // @ts-ignore
-  pdfjsLib.GlobalWorkerOptions.workerSrc = import.meta.env.BASE_URL
-    ? `${import.meta.env.BASE_URL}pdf.worker.mjs`
-    : '/pdf.worker.mjs';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_WORKER_SRC;
 }
 
-// Utility: PDF extraction now offloads parsing using a web worker
+type ExtractTextResult = string[];
+
 export const usePdfTextExtract = () => {
   // Returns a function to extract lines from pdf file
-  const extractTextLines = async (file: File): Promise<string[]> => {
-    // Try to use web worker for extraction
+  const extractTextLines = async (file: File): Promise<ExtractTextResult> => {
     if ('Worker' in window) {
       try {
         const WorkerCtor = await import('../workers/pdfText.worker?worker');
-        const worker = new WorkerCtor.default();
+        const worker: Worker = new WorkerCtor.default();
         return new Promise((resolve) => {
           worker.onmessage = (e: MessageEvent) => {
             if (e.data && e.data.success) {
-              resolve(e.data.lines);
+              resolve(e.data.lines as ExtractTextResult);
             } else {
-              // If worker failed, fallback to main-thread parsing
               resolve([]);
             }
             worker.terminate();
@@ -36,8 +34,8 @@ export const usePdfTextExtract = () => {
             worker.postMessage({ fileBuffer: buffer });
           });
         });
-      } catch (err) {
-        // fallback to original method below
+      } catch {
+        // fallback to main-thread parsing
       }
     }
 
@@ -50,7 +48,8 @@ export const usePdfTextExtract = () => {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
         const pageLines = textContent.items
-          .map((item: any) => (item && item.str ? item.str : ''))
+          .filter((item: any): item is { str: string } => typeof item === 'object' && item !== null && 'str' in item && typeof item.str === 'string')
+          .map((item) => item.str)
           .join(' ')
           .split('\n')
           .map(line => line.trim())
