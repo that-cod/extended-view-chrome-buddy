@@ -149,25 +149,31 @@ const Upload = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="text-center">
                 <div className="text-2xl font-bold text-white">
-                  {analysisResults.totalTrades || 'N/A'}
+                  {'totalTrades' in analysisResults
+                    ? analysisResults.totalTrades
+                    : 'N/A'}
                 </div>
                 <div className="text-sm text-gray-400">Total Trades</div>
               </div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-green-400">
-                  {analysisResults.winRate ? `${Math.round(analysisResults.winRate)}%` : 'N/A'}
+                  {'winRate' in analysisResults && typeof analysisResults.winRate === "number"
+                    ? `${Math.round(analysisResults.winRate)}%`
+                    : 'N/A'}
                 </div>
                 <div className="text-sm text-gray-400">Win Rate</div>
               </div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-blue-400">
-                  {analysisResults.emotionalPatterns || 'N/A'}
+                  {'emotionalPatterns' in analysisResults
+                    ? analysisResults.emotionalPatterns
+                    : 'N/A'}
                 </div>
                 <div className="text-sm text-gray-400">Emotional Patterns Detected</div>
               </div>
             </div>
             
-            {analysisResults.insights && (
+            {'insights' in analysisResults && analysisResults.insights && (
               <div className="mt-4 p-4 bg-[#1c2027] rounded-lg">
                 <h4 className="text-sm font-semibold text-white mb-2">Key Insights:</h4>
                 {Array.isArray(analysisResults.insights) ? (

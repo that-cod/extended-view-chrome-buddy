@@ -1,4 +1,3 @@
-
 import { useToast } from "@/hooks/use-toast";
 import { useTradingData } from '@/hooks/useTradingData';
 import { useAuth } from '@/contexts/AuthContext';
@@ -12,14 +11,29 @@ import { ALLOWED_MIME_TYPES, MAX_FILE_SIZE_BYTES, ERROR_MESSAGES, UploadStatus }
 import { logAndExtractMessage } from "@/utils/errorHandler";
 
 // Better types
-type FileAnalysisResult = {
-  statementId?: string;
-  rawText?: string;
-} | {
-  insights?: string | string[];
-  rawText?: string[];
-  totalLines?: number;
+type ProcessedTrade = {
+  date: string;
+  symbol: string;
+  action: string;
+  volume: number;
+  price: number;
+  profit: number;
+  // Possibly more fields
 };
+
+type FileAnalysisResult =
+  | {
+      statementId?: string;
+      rawText?: string;
+    }
+  | {
+      insights?: string | string[];
+      rawText?: string[];
+      totalLines?: number;
+      totalTrades?: number;
+      winRate?: number;
+      emotionalPatterns?: string;
+    };
 
 export const useUploadHandler = () => {
   const [status, setStatus] = useState<UploadStatus>(UploadStatus.Idle);
@@ -117,28 +131,38 @@ export const useUploadHandler = () => {
         }
         processedData = [{ statementId: statement.id, rawText: pdfRawText.join('\n') }];
       } else {
-        processedData = await processCsvFile(file);
-      }
-
-      let insertedTrades = null;
-      if (!isPDF) {
-        if (!processedData || processedData.length === 0) {
+        const trades = await processCsvFile(file); // This returns ProcessedTrade[];
+        // Instead of assigning as FileAnalysisResult[], we only need this for DB insert.
+        processedData = [];
+        // "insertedTrades" logic is correct, just pass this into file analysis summary
+        let insertedTrades = null;
+        if (!trades || trades.length === 0) {
           throw new Error(ERROR_MESSAGES.NO_VALID_TRADES);
         }
-        insertedTrades = await SupabaseService.insertTrades(processedData as any, statement.id);
+        insertedTrades = await SupabaseService.insertTrades(trades as any, statement.id);
         if (!insertedTrades) throw new Error('Failed to save trades to database');
+
+        let analysis = {
+          totalTrades: insertedTrades.length,
+          winRate: Math.round((insertedTrades.filter((t: any) => t.profit > 0).length / insertedTrades.length) * 100),
+          insights: 'Analysis completed successfully',
+        };
+        await SupabaseService.updateStatementStatus(statement.id, 'completed');
+        setStatus(UploadStatus.Success);
+        setResults(analysis);
+        updateUser({ hasUploadedStatement: true });
+        invalidateData();
+        toast({
+          title: "Upload Successful",
+          description: `${file.name} has been processed. Found ${(insertedTrades || []).length} trades.`
+        });
+        return;
       }
 
       let analysis;
       if (!isPDF) {
-        const res = await supabase.functions.invoke('analyze-trading-data', {
-          body: { statementId: statement.id }
-        });
-        analysis = res.data || {
-          totalTrades: insertedTrades.length,
-          winRate: Math.round((insertedTrades.filter((t: any) => t.profit > 0).length / insertedTrades.length) * 100),
-          insights: 'Analysis completed successfully'
-        };
+        // Already handled in "else { ... }" above for CSV
+        analysis = {}; // fallback
       } else {
         analysis = {
           rawText: pdfRawText,
@@ -150,19 +174,17 @@ export const useUploadHandler = () => {
             'No structured trade parsing applied. Please analyze lines manually.'
           ]
         };
+        await SupabaseService.updateStatementStatus(statement.id, 'completed');
+        setStatus(UploadStatus.Success);
+        setResults(analysis);
+        updateUser({ hasUploadedStatement: true });
+        invalidateData();
+        toast({
+          title: "Upload Successful",
+          description: `${file.name} has been uploaded: ${pdfRawText.length} lines extracted as text.`
+        });
+        return;
       }
-
-      await SupabaseService.updateStatementStatus(statement.id, 'completed');
-      setStatus(UploadStatus.Success);
-      setResults(analysis);
-      updateUser({ hasUploadedStatement: true });
-      invalidateData();
-      toast({
-        title: "Upload Successful",
-        description: isPDF
-          ? `${file.name} has been uploaded: ${pdfRawText.length} lines extracted as text.`
-          : `${file.name} has been processed. Found ${(insertedTrades || []).length} trades.`,
-      });
     } catch (error) {
       setStatus(UploadStatus.Error);
       const msg = logAndExtractMessage(error, ERROR_MESSAGES.UPLOAD_FAIL);

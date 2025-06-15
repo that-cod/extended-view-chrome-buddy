@@ -10,6 +10,10 @@ if ((window as any).Worker) {
 
 type ExtractTextResult = string[];
 
+function isTextItem(item: unknown): item is { str: string } {
+  return typeof item === "object" && item !== null && "str" in item && typeof (item as any).str === "string";
+}
+
 export const usePdfTextExtract = () => {
   // Returns a function to extract lines from pdf file
   const extractTextLines = async (file: File): Promise<ExtractTextResult> => {
@@ -47,8 +51,8 @@ export const usePdfTextExtract = () => {
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
-        const pageLines = textContent.items
-          .filter((item: any): item is { str: string } => typeof item === 'object' && item !== null && 'str' in item && typeof item.str === 'string')
+        const pageLines = (textContent.items as unknown[])
+          .filter(isTextItem)
           .map((item) => item.str)
           .join(' ')
           .split('\n')
