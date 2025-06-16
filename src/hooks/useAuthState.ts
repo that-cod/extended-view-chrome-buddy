@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -9,11 +10,6 @@ interface UserProfile {
   hasUploadedStatement: boolean;
 }
 
-/**
- * - Ensures single profile fetching on mount.
- * - Avoids function recreation or infinite loop triggers.
- * - All side-effects (including auth state change) are in one effect, empty array to assure one-time run.
- */
 export const useAuthState = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -27,6 +23,7 @@ export const useAuthState = () => {
         .select('*')
         .eq('id', userId)
         .maybeSingle();
+      
       if (!data || error) {
         // Create if doesn't exist
         const { data: created, error: createErr } = await supabase
@@ -40,7 +37,12 @@ export const useAuthState = () => {
           })
           .select()
           .single();
-        if (!created || createErr) return null;
+        
+        if (!created || createErr) {
+          console.error('Error creating profile:', createErr);
+          return null;
+        }
+        
         return {
           id: created.id,
           email: created.email,
@@ -49,6 +51,7 @@ export const useAuthState = () => {
           hasUploadedStatement: created.has_uploaded_statement,
         };
       }
+      
       return {
         id: data.id,
         email: data.email,
@@ -57,6 +60,7 @@ export const useAuthState = () => {
         hasUploadedStatement: data.has_uploaded_statement,
       };
     } catch (err) {
+      console.error('Error in fetchAndEnsureProfile:', err);
       setAuthError("Failed to fetch user profile. Please try again.");
       return null;
     }
@@ -64,76 +68,77 @@ export const useAuthState = () => {
 
   useEffect(() => {
     let mounted = true;
-    let loadingFinished = false;
-    let timeoutHandle: any;
 
-    const finishLoading = () => {
-      if (!loadingFinished) {
-        setIsLoading(false);
-        loadingFinished = true;
-      }
-    };
-
-    // Boot: get session and auth state
     const initialize = async () => {
       try {
+        // Get current session
         const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
+        
+        if (session?.user && mounted) {
+          console.log('Found existing session for user:', session.user.id);
           const profile = await fetchAndEnsureProfile(session.user.id, session.user.email || '');
-          if (mounted) setUser(profile);
+          if (mounted) {
+            setUser(profile);
+          }
         } else if (mounted) {
+          console.log('No existing session found');
           setUser(null);
         }
       } catch (error) {
-        if (mounted) setUser(null);
-        setAuthError("Authentication failed. Please check your network connection and try again.");
+        console.error('Error during initialization:', error);
+        if (mounted) {
+          setUser(null);
+          setAuthError("Authentication failed. Please check your network connection and try again.");
+        }
       } finally {
-        finishLoading();
+        if (mounted) {
+          setIsLoading(false);
+        }
       }
     };
 
-    // Sync on auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
+      
+      console.log('Auth state changed:', event, session?.user?.id);
+      
       if (session?.user) {
         setIsLoading(true);
-        setTimeout(async () => {
-          try {
-            const profile = await fetchAndEnsureProfile(session.user.id, session.user.email || '');
-            if (mounted) setUser(profile);
-          } catch {
-            if (mounted) setUser(null);
-            setAuthError("Failed to fetch user profile on auth state change.");
-          } finally {
-            finishLoading();
+        try {
+          const profile = await fetchAndEnsureProfile(session.user.id, session.user.email || '');
+          if (mounted) {
+            setUser(profile);
           }
-        }, 0);
+        } catch (error) {
+          console.error('Error during auth state change:', error);
+          if (mounted) {
+            setUser(null);
+            setAuthError("Failed to fetch user profile on auth state change.");
+          }
+        } finally {
+          if (mounted) {
+            setIsLoading(false);
+          }
+        }
       } else {
         setUser(null);
-        finishLoading();
+        setIsLoading(false);
       }
     });
 
+    // Initialize
     initialize();
-
-    // Reduce timeout to 5 seconds, show error and allow retry if needed
-    timeoutHandle = setTimeout(() => {
-      if (isLoading) {
-        setAuthError("Authentication is taking longer than expected. Please refresh or try again.");
-        finishLoading();
-      }
-    }, 5000);
 
     return () => {
       mounted = false;
       subscription.unsubscribe();
-      clearTimeout(timeoutHandle);
     };
-  }, []); // <- Ensures the effect runs ONCE ONLY
+  }, []);
 
-  // Profile update (unchanged)
   const updateUser = async (updates: Partial<UserProfile>) => {
     if (!user) throw new Error('No user to update');
+    
     const toUpdate: Partial<any> = {};
     if ('name' in updates) toUpdate.name = updates.name;
     if ('hasCompletedQuestionnaire' in updates) toUpdate.has_completed_questionnaire = updates.hasCompletedQuestionnaire;
