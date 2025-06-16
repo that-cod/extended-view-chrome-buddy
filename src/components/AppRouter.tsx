@@ -26,6 +26,7 @@ const AppRouter = () => {
         <div className="text-center">
           <div className="text-white text-lg mb-2">Loading...</div>
           <div className="text-gray-400 text-sm">Checking your authentication status</div>
+          <div className="text-gray-500 text-xs mt-2">If this takes too long, please refresh the page</div>
         </div>
       </div>
     );

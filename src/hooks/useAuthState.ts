@@ -17,13 +17,21 @@ export const useAuthState = () => {
 
   const fetchAndEnsureProfile = async (userId: string, email: string): Promise<UserProfile | null> => {
     try {
+      console.log('Fetching profile for user:', userId);
+      
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .maybeSingle();
       
-      if (!data || error) {
+      if (error) {
+        console.error('Error fetching profile:', error);
+        throw error;
+      }
+      
+      if (!data) {
+        console.log('No profile found, creating new profile for user:', userId);
         const { data: created, error: createErr } = await supabase
           .from('profiles')
           .insert({
@@ -36,11 +44,12 @@ export const useAuthState = () => {
           .select()
           .single();
         
-        if (!created || createErr) {
+        if (createErr) {
           console.error('Error creating profile:', createErr);
-          return null;
+          throw createErr;
         }
         
+        console.log('Profile created successfully:', created);
         return {
           id: created.id,
           email: created.email,
@@ -50,6 +59,7 @@ export const useAuthState = () => {
         };
       }
       
+      console.log('Profile found:', data);
       return {
         id: data.id,
         email: data.email,
@@ -69,6 +79,9 @@ export const useAuthState = () => {
 
     const initialize = async () => {
       try {
+        setIsLoading(true);
+        console.log('Initializing auth state...');
+        
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user && mounted) {
@@ -76,10 +89,12 @@ export const useAuthState = () => {
           const profile = await fetchAndEnsureProfile(session.user.id, session.user.email || '');
           if (mounted) {
             setUser(profile);
+            setAuthError(null);
           }
         } else if (mounted) {
           console.log('No existing session found');
           setUser(null);
+          setAuthError(null);
         }
       } catch (error) {
         console.error('Error during initialization:', error);
@@ -106,6 +121,7 @@ export const useAuthState = () => {
           const profile = await fetchAndEnsureProfile(session.user.id, session.user.email || '');
           if (mounted) {
             setUser(profile);
+            console.log('User profile set:', profile);
           }
         } catch (error) {
           console.error('Error during auth state change:', error);
@@ -119,6 +135,7 @@ export const useAuthState = () => {
           }
         }
       } else {
+        console.log('User signed out or no session');
         setUser(null);
         setIsLoading(false);
         setAuthError(null);
