@@ -15,7 +15,6 @@ export const useAuthState = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // Fetch the user's profile, create if missing
   const fetchAndEnsureProfile = async (userId: string, email: string): Promise<UserProfile | null> => {
     try {
       const { data, error } = await supabase
@@ -25,7 +24,6 @@ export const useAuthState = () => {
         .maybeSingle();
       
       if (!data || error) {
-        // Create if doesn't exist
         const { data: created, error: createErr } = await supabase
           .from('profiles')
           .insert({
@@ -71,7 +69,6 @@ export const useAuthState = () => {
 
     const initialize = async () => {
       try {
-        // Get current session
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user && mounted) {
@@ -97,7 +94,6 @@ export const useAuthState = () => {
       }
     };
 
-    // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
       
@@ -105,6 +101,7 @@ export const useAuthState = () => {
       
       if (session?.user) {
         setIsLoading(true);
+        setAuthError(null);
         try {
           const profile = await fetchAndEnsureProfile(session.user.id, session.user.email || '');
           if (mounted) {
@@ -124,10 +121,10 @@ export const useAuthState = () => {
       } else {
         setUser(null);
         setIsLoading(false);
+        setAuthError(null);
       }
     });
 
-    // Initialize
     initialize();
 
     return () => {

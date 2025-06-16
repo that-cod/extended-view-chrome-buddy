@@ -19,6 +19,7 @@ interface AuthContextType {
   logout: () => void;
   updateUser: (updates: Partial<UserProfile>) => Promise<void>;
   isLoading: boolean;
+  authError: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -32,12 +33,16 @@ export const useAuth = () => {
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, setUser, isLoading, setIsLoading, updateUser } = useAuthState();
+  const { user, setUser, isLoading, setIsLoading, updateUser, authError } = useAuthState();
   const { login, signup, loginWithGoogle, logout: authLogout } = useAuthActions(setIsLoading);
 
   const logout = async () => {
-    await authLogout();
-    setUser(null);
+    try {
+      await authLogout();
+      setUser(null);
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
   };
 
   return (
@@ -50,6 +55,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         updateUser,
         isLoading,
+        authError,
       }}
     >
       {children}

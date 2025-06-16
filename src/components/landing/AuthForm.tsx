@@ -25,7 +25,7 @@ const AuthForm: React.FC<AuthFormProps> = ({
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  const { login, signup, loginWithGoogle } = useAuth();
+  const { login, signup, loginWithGoogle, authError } = useAuth();
   const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -54,7 +54,7 @@ const AuthForm: React.FC<AuthFormProps> = ({
         await signup(email, password);
         toast({
           title: "Account Created Successfully!",
-          description: "Welcome to Trading Psychology Insights. You can now start using the app.",
+          description: "Welcome to NevUp. You can now start using the app.",
         });
       } else {
         await login(email, password);
@@ -101,6 +101,17 @@ const AuthForm: React.FC<AuthFormProps> = ({
       setIsLoading(false);
     }
   };
+
+  // Show auth error if present
+  React.useEffect(() => {
+    if (authError) {
+      toast({
+        title: "Authentication Error",
+        description: authError,
+        variant: "destructive",
+      });
+    }
+  }, [authError, toast]);
 
   return (
     <Card className="bg-[#232833] border-gray-700">

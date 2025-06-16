@@ -24,7 +24,6 @@ export const useAuthActions = (setIsLoading: (loading: boolean) => void) => {
     setIsLoading(true);
     console.log('Attempting signup for:', email);
     
-    // Use the current origin instead of localhost
     const redirectUrl = window.location.origin;
     
     const { data, error } = await supabase.auth.signUp({
@@ -51,7 +50,6 @@ export const useAuthActions = (setIsLoading: (loading: boolean) => void) => {
     setIsLoading(true);
     console.log('Attempting Google login...');
     
-    // Use the current origin instead of localhost
     const redirectUrl = window.location.origin;
     
     const { error } = await supabase.auth.signInWithOAuth({
