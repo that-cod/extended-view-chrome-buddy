@@ -2,6 +2,7 @@
 import React from 'react';
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/button";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Landing from "@/pages/Landing";
 import Questionnaire from "@/pages/Questionnaire";
@@ -14,10 +15,10 @@ import AppSidebar from "@/components/Sidebar";
 import { SidebarProvider, SidebarTrigger, SidebarInset } from "@/components/ui/sidebar";
 
 const AppRouter = () => {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, authError } = useAuth();
   const location = useLocation();
 
-  console.log('AppRouter render - Route:', location.pathname, 'isLoading:', isLoading, 'user:', user?.id, 'hasCompletedQuestionnaire:', user?.hasCompletedQuestionnaire);
+  console.log('AppRouter render - Route:', location.pathname, 'isLoading:', isLoading, 'user:', user?.id, 'hasCompletedQuestionnaire:', user?.hasCompletedQuestionnaire, 'authError:', authError);
 
   // Show loading while auth is being determined
   if (isLoading) {
@@ -27,6 +28,24 @@ const AppRouter = () => {
           <div className="text-white text-lg mb-2">Loading...</div>
           <div className="text-gray-400 text-sm">Checking your authentication status</div>
           <div className="text-gray-500 text-xs mt-2">If this takes too long, please refresh the page</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state if there's an auth error
+  if (authError) {
+    return (
+      <div className="min-h-screen bg-[#171b22] flex items-center justify-center">
+        <div className="text-center max-w-md">
+          <div className="text-red-400 text-lg mb-2">Authentication Error</div>
+          <div className="text-gray-400 text-sm mb-4">{authError}</div>
+          <Button 
+            onClick={() => window.location.reload()} 
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            Refresh Page
+          </Button>
         </div>
       </div>
     );
