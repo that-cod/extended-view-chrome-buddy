@@ -1,5 +1,6 @@
 
 import React from "react";
+import { Button } from "@/components/ui/button";
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -8,46 +9,74 @@ interface ErrorBoundaryProps {
 interface ErrorBoundaryState {
   hasError: boolean;
   error: Error | null;
+  errorInfo: React.ErrorInfo | null;
 }
 
 export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, errorInfo: null };
   }
 
-  static getDerivedStateFromError(error: Error) {
-    return { hasError: true, error: error };
+  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
+    return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    // Optionally log errorInfo to an error reporting service
-    // e.g., Sentry
-    // eslint-disable-next-line no-console
-    console.error("ErrorBoundary Caught:", error, errorInfo);
+    console.error("ErrorBoundary caught an error:", error, errorInfo);
+    this.setState({ errorInfo });
+    
+    // In production, you might want to log this to an external service
+    if (process.env.NODE_ENV === 'production') {
+      // Log to external service like Sentry
+      console.error('Production error:', error.message, error.stack);
+    }
   }
 
   handleRetry = () => {
-    this.setState({ hasError: false, error: null });
-    // Optionally reload page or rerender component
-    // window.location.reload();
+    this.setState({ hasError: false, error: null, errorInfo: null });
+  };
+
+  handleReload = () => {
+    window.location.reload();
   };
 
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-[#181b20]">
-          <h2 className="text-2xl font-bold mb-2 text-red-500">Something went wrong.</h2>
-          <p className="text-gray-300 mb-4">
-            <span className="font-semibold">Error:</span>{' '}
-            {this.state.error?.message || "An error has occurred."}
-          </p>
-          <button
-            className="px-4 py-2 bg-blue-600 rounded text-white font-bold hover:bg-blue-700"
-            onClick={this.handleRetry}
-          >
-            Retry
-          </button>
+        <div className="min-h-screen flex flex-col items-center justify-center bg-[#171b22] p-4">
+          <div className="max-w-md w-full text-center">
+            <h2 className="text-2xl font-bold mb-4 text-red-400">Something went wrong</h2>
+            <div className="bg-[#232833] border border-gray-700 rounded-lg p-6 mb-6">
+              <p className="text-gray-300 mb-4">
+                <span className="font-semibold">Error:</span>{' '}
+                {this.state.error?.message || "An unexpected error occurred"}
+              </p>
+              {process.env.NODE_ENV === 'development' && this.state.errorInfo && (
+                <details className="text-xs text-gray-400 text-left">
+                  <summary className="cursor-pointer mb-2">Error Details</summary>
+                  <pre className="whitespace-pre-wrap overflow-auto max-h-32">
+                    {this.state.errorInfo.componentStack}
+                  </pre>
+                </details>
+              )}
+            </div>
+            <div className="space-y-3">
+              <Button
+                onClick={this.handleRetry}
+                className="w-full bg-blue-600 hover:bg-blue-700"
+              >
+                Try Again
+              </Button>
+              <Button
+                onClick={this.handleReload}
+                variant="outline"
+                className="w-full"
+              >
+                Reload Page
+              </Button>
+            </div>
+          </div>
         </div>
       );
     }

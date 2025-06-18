@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { ProcessedTrade } from '@/utils/csvProcessor';
 
@@ -36,6 +37,18 @@ export interface TradingAnalysis {
 }
 
 export class SupabaseService {
+  private static async getCurrentUser() {
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error) {
+      console.error('[SupabaseService] Authentication error:', error);
+      throw new Error('User not authenticated. Please log in and try again.');
+    }
+    if (!user) {
+      throw new Error('User not authenticated. Please log in and try again.');
+    }
+    return user;
+  }
+
   static async createUploadedStatement(
     filename: string,
     fileSize: number,
@@ -43,17 +56,7 @@ export class SupabaseService {
   ): Promise<UploadedStatement | null> {
     try {
       console.log('[SupabaseService.createUploadedStatement]', { filename, fileSize, fileType });
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-      if (userError) {
-        console.error('[SupabaseService.createUploadedStatement] Authentication error:', userError);
-        throw new Error('User not authenticated. Please log in and try again.');
-      }
-
-      if (!user) {
-        console.error('[SupabaseService.createUploadedStatement] No user found in session');
-        throw new Error('User not authenticated. Please log in and try again.');
-      }
+      const user = await this.getCurrentUser();
 
       const { data, error } = await supabase
         .from('uploaded_statements')
@@ -112,12 +115,7 @@ export class SupabaseService {
   static async insertTrades(trades: ProcessedTrade[], statementId?: string): Promise<Trade[] | null> {
     try {
       console.log('[SupabaseService.insertTrades] inserting', trades.length, 'trades, statementId:', statementId);
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-      if (userError || !user) {
-        console.error('[SupabaseService.insertTrades] Authentication error:', userError);
-        throw new Error('User not authenticated');
-      }
+      const user = await this.getCurrentUser();
 
       const tradesData = trades.map(trade => ({
         user_id: user.id,
@@ -158,9 +156,12 @@ export class SupabaseService {
 
   static async getTrades(): Promise<Trade[] | null> {
     try {
+      const user = await this.getCurrentUser();
+      
       const { data, error } = await supabase
         .from('trades')
         .select('*')
+        .eq('user_id', user.id)
         .order('trade_date', { ascending: false });
 
       if (error) {
@@ -177,9 +178,12 @@ export class SupabaseService {
 
   static async getUploadedStatements(): Promise<UploadedStatement[] | null> {
     try {
+      const user = await this.getCurrentUser();
+      
       const { data, error } = await supabase
         .from('uploaded_statements')
         .select('*')
+        .eq('user_id', user.id)
         .order('upload_date', { ascending: false });
 
       if (error) {
@@ -200,8 +204,7 @@ export class SupabaseService {
     statementId?: string
   ): Promise<TradingAnalysis | null> {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
+      const user = await this.getCurrentUser();
 
       const { data, error } = await supabase
         .from('trading_analysis')

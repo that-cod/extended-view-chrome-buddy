@@ -16,7 +16,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   updateUser: (updates: Partial<UserProfile>) => Promise<void>;
   isLoading: boolean;
   authError: string | null;
@@ -38,10 +38,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     try {
+      setIsLoading(true);
       await authLogout();
       setUser(null);
     } catch (error) {
       console.error('Logout error:', error);
+      // Don't throw here, just log the error
+      // User should still be logged out from the auth service
+      setUser(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Wrap auth actions with proper error handling
+  const wrappedLogin = async (email: string, password: string) => {
+    try {
+      await login(email, password);
+    } catch (error) {
+      console.error('Login error in AuthContext:', error);
+      throw error; // Re-throw so UI can handle it
+    }
+  };
+
+  const wrappedSignup = async (email: string, password: string) => {
+    try {
+      await signup(email, password);
+    } catch (error) {
+      console.error('Signup error in AuthContext:', error);
+      throw error; // Re-throw so UI can handle it
+    }
+  };
+
+  const wrappedLoginWithGoogle = async () => {
+    try {
+      await loginWithGoogle();
+    } catch (error) {
+      console.error('Google login error in AuthContext:', error);
+      throw error; // Re-throw so UI can handle it
+    }
+  };
+
+  const wrappedUpdateUser = async (updates: Partial<UserProfile>) => {
+    try {
+      await updateUser(updates);
+    } catch (error) {
+      console.error('Update user error in AuthContext:', error);
+      throw error; // Re-throw so UI can handle it
     }
   };
 
@@ -49,11 +92,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     <AuthContext.Provider
       value={{
         user,
-        login,
-        signup,
-        loginWithGoogle,
+        login: wrappedLogin,
+        signup: wrappedSignup,
+        loginWithGoogle: wrappedLoginWithGoogle,
         logout,
-        updateUser,
+        updateUser: wrappedUpdateUser,
         isLoading,
         authError,
       }}
