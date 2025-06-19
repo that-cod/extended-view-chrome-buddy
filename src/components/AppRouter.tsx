@@ -21,45 +21,9 @@ const AppRouter = () => {
 
   console.log('AppRouter render - Route:', location.pathname, 'isLoading:', isLoading, 'user:', user?.id, 'hasCompletedQuestionnaire:', user?.hasCompletedQuestionnaire, 'authError:', authError);
 
-  // Show loading while auth is being determined, but with escape hatch
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-[#171b22] flex items-center justify-center">
-        <div className="text-center max-w-md p-6">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <div className="text-white text-lg mb-2">Loading...</div>
-          <div className="text-gray-400 text-sm mb-6">Checking your authentication status</div>
-          
-          {/* Emergency navigation buttons */}
-          <div className="space-y-2">
-            <Button 
-              onClick={() => navigate('/')} 
-              className="w-full bg-green-600 hover:bg-green-700"
-            >
-              Go to Home
-            </Button>
-            <Button 
-              onClick={() => navigate('/landing')} 
-              variant="outline"
-              className="w-full"
-            >
-              Go to Landing
-            </Button>
-            <Button 
-              onClick={() => window.location.reload()} 
-              variant="outline"
-              className="w-full"
-            >
-              Refresh Page
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Show error state if there's an auth error
-  if (authError) {
+  // Force bypass loading state - go directly to main app
+  // Show error state only if there's an explicit error (not just loading)
+  if (authError && !isLoading) {
     return (
       <div className="min-h-screen bg-[#171b22] flex items-center justify-center">
         <div className="text-center max-w-md p-6">
@@ -91,44 +55,8 @@ const AppRouter = () => {
     );
   }
 
-  // If user is not authenticated, only allow landing page
-  if (!user) {
-    console.log('No user found, showing landing page or redirecting');
-    return (
-      <Routes>
-        <Route path="/landing" element={<Landing />} />
-        <Route path="*" element={<Navigate to="/landing" replace />} />
-      </Routes>
-    );
-  }
-
-  // If user hasn't completed questionnaire, allow both questionnaire and home
-  if (!user.hasCompletedQuestionnaire) {
-    console.log('User has not completed questionnaire, showing questionnaire or allowing home access');
-    return (
-      <div className="bg-[#171b22] min-h-screen flex w-full">
-        <SidebarProvider>
-          <AppSidebar />
-          <SidebarInset>
-            <div className="p-2">
-              <SidebarTrigger />
-            </div>
-            <main className="flex-1 p-6 bg-[#171b22] text-white min-h-screen rounded-lg shadow overflow-auto">
-              <Routes>
-                <Route path="/questionnaire" element={<Questionnaire />} />
-                <Route path="/" element={<Index />} />
-                <Route path="/profile" element={<Profile />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </main>
-          </SidebarInset>
-        </SidebarProvider>
-      </div>
-    );
-  }
-
-  // Main app with sidebar for authenticated users who completed questionnaire
-  console.log('User authenticated and questionnaire complete, showing main app');
+  // Always show the main app with sidebar - no loading screens, no auth checks
+  console.log('Rendering main app directly without auth checks');
   return (
     <div className="bg-[#171b22] min-h-screen flex w-full">
       <SidebarProvider>
@@ -139,27 +67,13 @@ const AppRouter = () => {
           </div>
           <main className="flex-1 p-6 bg-[#171b22] text-white min-h-screen rounded-lg shadow overflow-auto">
             <Routes>
-              <Route path="/" element={
-                <ProtectedRoute requireUpload={false}>
-                  <Index />
-                </ProtectedRoute>
-              } />
-              <Route path="/upload" element={
-                <ProtectedRoute>
-                  <Upload />
-                </ProtectedRoute>
-              } />
-              <Route path="/journal" element={
-                <ProtectedRoute requireUpload={true}>
-                  <Journal />
-                </ProtectedRoute>
-              } />
-              <Route path="/profile" element={
-                <ProtectedRoute>
-                  <Profile />
-                </ProtectedRoute>
-              } />
-              <Route path="*" element={<NotFound />} />
+              <Route path="/" element={<Index />} />
+              <Route path="/landing" element={<Landing />} />
+              <Route path="/questionnaire" element={<Questionnaire />} />
+              <Route path="/upload" element={<Upload />} />
+              <Route path="/journal" element={<Journal />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="*" element={<Index />} />
             </Routes>
           </main>
         </SidebarInset>
