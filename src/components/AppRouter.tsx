@@ -37,7 +37,7 @@ const AppRouter = () => {
   if (authError) {
     return (
       <div className="min-h-screen bg-[#171b22] flex items-center justify-center">
-        <div className="text-center max-w-md">
+        <div className="text-center max-w-md p-6">
           <div className="text-red-400 text-lg mb-2">Authentication Error</div>
           <div className="text-gray-400 text-sm mb-4">{authError}</div>
           <div className="space-y-2">
@@ -89,7 +89,9 @@ const AppRouter = () => {
       <SidebarProvider>
         <AppSidebar />
         <SidebarInset>
-          <SidebarTrigger />
+          <div className="p-2">
+            <SidebarTrigger />
+          </div>
           <main className="flex-1 p-6 bg-[#171b22] text-white min-h-screen rounded-lg shadow overflow-auto">
             <Routes>
               <Route path="/" element={

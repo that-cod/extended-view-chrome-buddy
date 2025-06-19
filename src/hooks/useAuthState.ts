@@ -27,38 +27,12 @@ export const useAuthState = () => {
       
       if (error) {
         console.error('Error fetching profile:', error);
-        // If profile doesn't exist, create it
-        if (error.code === 'PGRST116') {
-          const { data: newProfile, error: createError } = await supabase
-            .from('profiles')
-            .insert({
-              id: userId,
-              email,
-              name: null,
-              has_completed_questionnaire: false,
-              has_uploaded_statement: false
-            })
-            .select()
-            .single();
-          
-          if (createError) {
-            console.error('Error creating profile:', createError);
-            throw createError;
-          }
-          
-          return {
-            id: newProfile.id,
-            email: newProfile.email,
-            name: newProfile.name,
-            hasCompletedQuestionnaire: newProfile.has_completed_questionnaire,
-            hasUploadedStatement: newProfile.has_uploaded_statement,
-          };
-        }
         throw error;
       }
       
       if (!data) {
         // Profile doesn't exist, create it
+        console.log('Profile not found, creating new profile');
         const { data: newProfile, error: createError } = await supabase
           .from('profiles')
           .insert({
@@ -105,20 +79,30 @@ export const useAuthState = () => {
       try {
         console.log('Initializing auth state...');
         
-        // Get current session
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
           console.error('Error getting session:', error);
-          throw error;
+          if (mounted) {
+            setAuthError('Failed to get session. Please try refreshing the page.');
+            setIsLoading(false);
+          }
+          return;
         }
         
         if (session?.user && mounted) {
           console.log('Found existing session for user:', session.user.id);
-          const profile = await fetchUserProfile(session.user.id, session.user.email || '');
-          if (mounted) {
-            setUser(profile);
-            setAuthError(null);
+          try {
+            const profile = await fetchUserProfile(session.user.id, session.user.email || '');
+            if (mounted) {
+              setUser(profile);
+              setAuthError(null);
+            }
+          } catch (profileError) {
+            console.error('Error fetching user profile:', profileError);
+            if (mounted) {
+              setAuthError('Failed to load user profile. Please try again.');
+            }
           }
         } else if (mounted) {
           console.log('No existing session found');
@@ -151,7 +135,7 @@ export const useAuthState = () => {
           const profile = await fetchUserProfile(session.user.id, session.user.email || '');
           if (mounted) {
             setUser(profile);
-            console.log('User profile set:', profile);
+            console.log('User profile updated:', profile);
           }
         } catch (error) {
           console.error('Error during auth state change:', error);

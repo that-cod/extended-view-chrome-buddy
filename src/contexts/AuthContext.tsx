@@ -42,7 +42,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await authLogin(email, password);
     } catch (error) {
       console.error('Login error in AuthContext:', error);
-      setAuthError(error instanceof Error ? error.message : 'Login failed');
+      const errorMessage = error instanceof Error ? error.message : 'Login failed';
+      setAuthError(errorMessage);
       throw error;
     }
   };
@@ -53,7 +54,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await authSignup(email, password);
     } catch (error) {
       console.error('Signup error in AuthContext:', error);
-      setAuthError(error instanceof Error ? error.message : 'Signup failed');
+      const errorMessage = error instanceof Error ? error.message : 'Signup failed';
+      setAuthError(errorMessage);
       throw error;
     }
   };
@@ -64,7 +66,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await authLoginWithGoogle();
     } catch (error) {
       console.error('Google login error in AuthContext:', error);
-      setAuthError(error instanceof Error ? error.message : 'Google login failed');
+      const errorMessage = error instanceof Error ? error.message : 'Google login failed';
+      setAuthError(errorMessage);
       throw error;
     }
   };
@@ -88,7 +91,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await updateUser(updates);
     } catch (error) {
       console.error('Update user error in AuthContext:', error);
-      setAuthError(error instanceof Error ? error.message : 'Update failed');
+      const errorMessage = error instanceof Error ? error.message : 'Update failed';
+      setAuthError(errorMessage);
       throw error;
     }
   };
