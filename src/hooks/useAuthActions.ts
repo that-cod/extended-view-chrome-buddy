@@ -6,66 +6,76 @@ export const useAuthActions = (setIsLoading: (loading: boolean) => void) => {
     setIsLoading(true);
     console.log('Attempting login for:', email);
     
-    const { data, error } = await supabase.auth.signInWithPassword({ 
-      email, 
-      password 
-    });
-    
-    if (error) {
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ 
+        email, 
+        password 
+      });
+      
+      if (error) {
+        console.error('Login error:', error);
+        throw error;
+      }
+      
+      console.log('Login successful:', data.user?.id);
+    } finally {
       setIsLoading(false);
-      console.error('Login error:', error);
-      throw error;
     }
-    
-    console.log('Login successful:', data.user?.id);
   };
 
   const signup = async (email: string, password: string) => {
     setIsLoading(true);
     console.log('Attempting signup for:', email);
     
-    const redirectUrl = window.location.origin;
-    
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: redirectUrl,
-        data: {
-          email: email
+    try {
+      const redirectUrl = window.location.origin;
+      
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: redirectUrl,
+          data: {
+            email: email
+          }
         }
+      });
+      
+      if (error) {
+        console.error('Signup error:', error);
+        throw error;
       }
-    });
-    
-    if (error) {
+      
+      console.log('Signup successful:', data);
+    } finally {
       setIsLoading(false);
-      console.error('Signup error:', error);
-      throw error;
     }
-    
-    console.log('Signup successful:', data);
   };
 
   const loginWithGoogle = async () => {
     setIsLoading(true);
     console.log('Attempting Google login...');
     
-    const redirectUrl = window.location.origin;
-    
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: redirectUrl,
-        queryParams: {
-          access_type: 'offline',
-          prompt: 'consent',
+    try {
+      const redirectUrl = window.location.origin;
+      
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: redirectUrl,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          }
         }
+      });
+      
+      if (error) {
+        console.error('Google login error:', error);
+        throw error;
       }
-    });
-    
-    if (error) {
+    } catch (error) {
       setIsLoading(false);
-      console.error('Google login error:', error);
       throw error;
     }
   };
@@ -74,8 +84,15 @@ export const useAuthActions = (setIsLoading: (loading: boolean) => void) => {
     setIsLoading(true);
     console.log('Logging out...');
     
-    await supabase.auth.signOut();
-    setIsLoading(false);
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Logout error:', error);
+        throw error;
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return { login, signup, loginWithGoogle, logout };

@@ -15,7 +15,7 @@ export const useAuthState = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
 
-  const fetchAndEnsureProfile = async (userId: string, email: string): Promise<UserProfile | null> => {
+  const fetchUserProfile = async (userId: string, email: string): Promise<UserProfile | null> => {
     try {
       console.log('Fetching profile for user:', userId);
       
@@ -27,39 +27,39 @@ export const useAuthState = () => {
       
       if (error) {
         console.error('Error fetching profile:', error);
-        // If it's an RLS error, the profile might still be created by the trigger
-        if (error.message.includes('row-level security') || error.code === 'PGRST116') {
-          console.log('RLS error, but profile might exist. Retrying...');
-          // Wait a moment and try again in case the trigger is still processing
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          const { data: retryData, error: retryError } = await supabase
+        // If profile doesn't exist, create it
+        if (error.code === 'PGRST116') {
+          const { data: newProfile, error: createError } = await supabase
             .from('profiles')
-            .select('*')
-            .eq('id', userId)
-            .maybeSingle();
+            .insert({
+              id: userId,
+              email,
+              name: null,
+              has_completed_questionnaire: false,
+              has_uploaded_statement: false
+            })
+            .select()
+            .single();
           
-          if (retryError) {
-            console.error('Retry failed:', retryError);
-            throw retryError;
+          if (createError) {
+            console.error('Error creating profile:', createError);
+            throw createError;
           }
           
-          if (retryData) {
-            console.log('Profile found on retry:', retryData);
-            return {
-              id: retryData.id,
-              email: retryData.email,
-              name: retryData.name,
-              hasCompletedQuestionnaire: retryData.has_completed_questionnaire,
-              hasUploadedStatement: retryData.has_uploaded_statement,
-            };
-          }
+          return {
+            id: newProfile.id,
+            email: newProfile.email,
+            name: newProfile.name,
+            hasCompletedQuestionnaire: newProfile.has_completed_questionnaire,
+            hasUploadedStatement: newProfile.has_uploaded_statement,
+          };
         }
         throw error;
       }
       
       if (!data) {
-        console.log('No profile found, creating new profile for user:', userId);
-        const { data: created, error: createErr } = await supabase
+        // Profile doesn't exist, create it
+        const { data: newProfile, error: createError } = await supabase
           .from('profiles')
           .insert({
             id: userId,
@@ -71,43 +71,20 @@ export const useAuthState = () => {
           .select()
           .single();
         
-        if (createErr) {
-          console.error('Error creating profile:', createErr);
-          // If profile creation fails due to trigger already creating it, try to fetch again
-          if (createErr.code === '23505') { // Unique violation - profile already exists
-            console.log('Profile already exists, fetching...');
-            const { data: existingData, error: fetchError } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', userId)
-              .single();
-            
-            if (fetchError) {
-              throw fetchError;
-            }
-            
-            return {
-              id: existingData.id,
-              email: existingData.email,
-              name: existingData.name,
-              hasCompletedQuestionnaire: existingData.has_completed_questionnaire,
-              hasUploadedStatement: existingData.has_uploaded_statement,
-            };
-          }
-          throw createErr;
+        if (createError) {
+          console.error('Error creating profile:', createError);
+          throw createError;
         }
         
-        console.log('Profile created successfully:', created);
         return {
-          id: created.id,
-          email: created.email,
-          name: created.name,
-          hasCompletedQuestionnaire: created.has_completed_questionnaire,
-          hasUploadedStatement: created.has_uploaded_statement,
+          id: newProfile.id,
+          email: newProfile.email,
+          name: newProfile.name,
+          hasCompletedQuestionnaire: newProfile.has_completed_questionnaire,
+          hasUploadedStatement: newProfile.has_uploaded_statement,
         };
       }
       
-      console.log('Profile found:', data);
       return {
         id: data.id,
         email: data.email,
@@ -116,35 +93,29 @@ export const useAuthState = () => {
         hasUploadedStatement: data.has_uploaded_statement,
       };
     } catch (err) {
-      console.error('Error in fetchAndEnsureProfile:', err);
-      setAuthError("Failed to fetch user profile. Please try refreshing the page.");
-      return null;
+      console.error('Error in fetchUserProfile:', err);
+      throw err;
     }
   };
 
   useEffect(() => {
     let mounted = true;
-    let timeoutId: NodeJS.Timeout;
 
-    const initialize = async () => {
+    const initializeAuth = async () => {
       try {
-        setIsLoading(true);
         console.log('Initializing auth state...');
         
-        // Set a timeout to prevent infinite loading
-        timeoutId = setTimeout(() => {
-          if (mounted) {
-            console.error('Auth initialization timeout');
-            setIsLoading(false);
-            setAuthError("Authentication timeout. Please refresh the page and try again.");
-          }
-        }, 10000); // 10 second timeout
+        // Get current session
+        const { data: { session }, error } = await supabase.auth.getSession();
         
-        const { data: { session } } = await supabase.auth.getSession();
+        if (error) {
+          console.error('Error getting session:', error);
+          throw error;
+        }
         
         if (session?.user && mounted) {
           console.log('Found existing session for user:', session.user.id);
-          const profile = await fetchAndEnsureProfile(session.user.id, session.user.email || '');
+          const profile = await fetchUserProfile(session.user.id, session.user.email || '');
           if (mounted) {
             setUser(profile);
             setAuthError(null);
@@ -154,26 +125,20 @@ export const useAuthState = () => {
           setUser(null);
           setAuthError(null);
         }
-        
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-        }
       } catch (error) {
-        console.error('Error during initialization:', error);
+        console.error('Error during auth initialization:', error);
         if (mounted) {
           setUser(null);
-          setAuthError("Authentication failed. Please check your network connection and try again.");
+          setAuthError('Failed to initialize authentication. Please refresh the page.');
         }
       } finally {
         if (mounted) {
           setIsLoading(false);
         }
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-        }
       }
     };
 
+    // Set up auth state change listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
       
@@ -183,7 +148,7 @@ export const useAuthState = () => {
         setIsLoading(true);
         setAuthError(null);
         try {
-          const profile = await fetchAndEnsureProfile(session.user.id, session.user.email || '');
+          const profile = await fetchUserProfile(session.user.id, session.user.email || '');
           if (mounted) {
             setUser(profile);
             console.log('User profile set:', profile);
@@ -192,7 +157,7 @@ export const useAuthState = () => {
           console.error('Error during auth state change:', error);
           if (mounted) {
             setUser(null);
-            setAuthError("Failed to fetch user profile after sign-in. Please try refreshing the page.");
+            setAuthError('Failed to fetch user profile. Please try again.');
           }
         } finally {
           if (mounted) {
@@ -207,13 +172,11 @@ export const useAuthState = () => {
       }
     });
 
-    initialize();
+    // Initialize auth
+    initializeAuth();
 
     return () => {
       mounted = false;
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
       subscription.unsubscribe();
     };
   }, []);
@@ -233,7 +196,8 @@ export const useAuthState = () => {
       .select()
       .single();
 
-    if (error || !data) throw error || new Error('Failed to update user profile');
+    if (error) throw error;
+    if (!data) throw new Error('Failed to update user profile');
 
     const updatedUser = {
       id: data.id,
@@ -246,5 +210,5 @@ export const useAuthState = () => {
     setUser(updatedUser);
   };
 
-  return { user, setUser, isLoading, setIsLoading, updateUser, authError };
+  return { user, setUser, isLoading, setIsLoading, updateUser, authError, setAuthError };
 };

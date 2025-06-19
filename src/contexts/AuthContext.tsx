@@ -33,12 +33,45 @@ export const useAuth = () => {
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, setUser, isLoading, setIsLoading, updateUser, authError } = useAuthState();
-  const { login, signup, loginWithGoogle, logout: authLogout } = useAuthActions(setIsLoading);
+  const { user, setUser, isLoading, setIsLoading, updateUser, authError, setAuthError } = useAuthState();
+  const { login: authLogin, signup: authSignup, loginWithGoogle: authLoginWithGoogle, logout: authLogout } = useAuthActions(setIsLoading);
+
+  const login = async (email: string, password: string) => {
+    setAuthError(null);
+    try {
+      await authLogin(email, password);
+    } catch (error) {
+      console.error('Login error in AuthContext:', error);
+      setAuthError(error instanceof Error ? error.message : 'Login failed');
+      throw error;
+    }
+  };
+
+  const signup = async (email: string, password: string) => {
+    setAuthError(null);
+    try {
+      await authSignup(email, password);
+    } catch (error) {
+      console.error('Signup error in AuthContext:', error);
+      setAuthError(error instanceof Error ? error.message : 'Signup failed');
+      throw error;
+    }
+  };
+
+  const loginWithGoogle = async () => {
+    setAuthError(null);
+    try {
+      await authLoginWithGoogle();
+    } catch (error) {
+      console.error('Google login error in AuthContext:', error);
+      setAuthError(error instanceof Error ? error.message : 'Google login failed');
+      throw error;
+    }
+  };
 
   const logout = async () => {
+    setAuthError(null);
     try {
-      setIsLoading(true);
       await authLogout();
       setUser(null);
     } catch (error) {
@@ -46,45 +79,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Don't throw here, just log the error
       // User should still be logged out from the auth service
       setUser(null);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Wrap auth actions with proper error handling
-  const wrappedLogin = async (email: string, password: string) => {
-    try {
-      await login(email, password);
-    } catch (error) {
-      console.error('Login error in AuthContext:', error);
-      throw error; // Re-throw so UI can handle it
-    }
-  };
-
-  const wrappedSignup = async (email: string, password: string) => {
-    try {
-      await signup(email, password);
-    } catch (error) {
-      console.error('Signup error in AuthContext:', error);
-      throw error; // Re-throw so UI can handle it
-    }
-  };
-
-  const wrappedLoginWithGoogle = async () => {
-    try {
-      await loginWithGoogle();
-    } catch (error) {
-      console.error('Google login error in AuthContext:', error);
-      throw error; // Re-throw so UI can handle it
     }
   };
 
   const wrappedUpdateUser = async (updates: Partial<UserProfile>) => {
+    setAuthError(null);
     try {
       await updateUser(updates);
     } catch (error) {
       console.error('Update user error in AuthContext:', error);
-      throw error; // Re-throw so UI can handle it
+      setAuthError(error instanceof Error ? error.message : 'Update failed');
+      throw error;
     }
   };
 
@@ -92,9 +97,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     <AuthContext.Provider
       value={{
         user,
-        login: wrappedLogin,
-        signup: wrappedSignup,
-        loginWithGoogle: wrappedLoginWithGoogle,
+        login,
+        signup,
+        loginWithGoogle,
         logout,
         updateUser: wrappedUpdateUser,
         isLoading,

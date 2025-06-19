@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { ProcessedTrade } from '@/utils/csvProcessor';
 
@@ -136,7 +135,6 @@ export class SupabaseService {
         .select();
 
       if (error) {
-        // Enhanced: Bubble up constraint violations, like duplicates or not null, for the hook to handle with context.
         if (
           error.message.includes('violates') ||
           error.message.includes('duplicate key')

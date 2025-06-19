@@ -15,7 +15,7 @@ import AppSidebar from "@/components/Sidebar";
 import { SidebarProvider, SidebarTrigger, SidebarInset } from "@/components/ui/sidebar";
 
 const AppRouter = () => {
-  const { user, isLoading, authError } = useAuth();
+  const { user, isLoading, authError, logout } = useAuth();
   const location = useLocation();
 
   console.log('AppRouter render - Route:', location.pathname, 'isLoading:', isLoading, 'user:', user?.id, 'hasCompletedQuestionnaire:', user?.hasCompletedQuestionnaire, 'authError:', authError);
@@ -25,9 +25,9 @@ const AppRouter = () => {
     return (
       <div className="min-h-screen bg-[#171b22] flex items-center justify-center">
         <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <div className="text-white text-lg mb-2">Loading...</div>
           <div className="text-gray-400 text-sm">Checking your authentication status</div>
-          <div className="text-gray-500 text-xs mt-2">If this takes too long, please refresh the page</div>
         </div>
       </div>
     );
@@ -40,12 +40,21 @@ const AppRouter = () => {
         <div className="text-center max-w-md">
           <div className="text-red-400 text-lg mb-2">Authentication Error</div>
           <div className="text-gray-400 text-sm mb-4">{authError}</div>
-          <Button 
-            onClick={() => window.location.reload()} 
-            className="bg-blue-600 hover:bg-blue-700"
-          >
-            Refresh Page
-          </Button>
+          <div className="space-y-2">
+            <Button 
+              onClick={() => window.location.reload()} 
+              className="w-full bg-blue-600 hover:bg-blue-700"
+            >
+              Refresh Page
+            </Button>
+            <Button 
+              onClick={logout}
+              variant="outline"
+              className="w-full"
+            >
+              Sign Out
+            </Button>
+          </div>
         </div>
       </div>
     );
