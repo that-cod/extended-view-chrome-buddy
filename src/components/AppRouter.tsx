@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -17,17 +17,42 @@ import { SidebarProvider, SidebarTrigger, SidebarInset } from "@/components/ui/s
 const AppRouter = () => {
   const { user, isLoading, authError, logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
 
   console.log('AppRouter render - Route:', location.pathname, 'isLoading:', isLoading, 'user:', user?.id, 'hasCompletedQuestionnaire:', user?.hasCompletedQuestionnaire, 'authError:', authError);
 
-  // Show loading while auth is being determined
+  // Show loading while auth is being determined, but with escape hatch
   if (isLoading) {
     return (
       <div className="min-h-screen bg-[#171b22] flex items-center justify-center">
-        <div className="text-center">
+        <div className="text-center max-w-md p-6">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <div className="text-white text-lg mb-2">Loading...</div>
-          <div className="text-gray-400 text-sm">Checking your authentication status</div>
+          <div className="text-gray-400 text-sm mb-6">Checking your authentication status</div>
+          
+          {/* Emergency navigation buttons */}
+          <div className="space-y-2">
+            <Button 
+              onClick={() => navigate('/')} 
+              className="w-full bg-green-600 hover:bg-green-700"
+            >
+              Go to Home
+            </Button>
+            <Button 
+              onClick={() => navigate('/landing')} 
+              variant="outline"
+              className="w-full"
+            >
+              Go to Landing
+            </Button>
+            <Button 
+              onClick={() => window.location.reload()} 
+              variant="outline"
+              className="w-full"
+            >
+              Refresh Page
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -41,6 +66,12 @@ const AppRouter = () => {
           <div className="text-red-400 text-lg mb-2">Authentication Error</div>
           <div className="text-gray-400 text-sm mb-4">{authError}</div>
           <div className="space-y-2">
+            <Button 
+              onClick={() => navigate('/')} 
+              className="w-full bg-green-600 hover:bg-green-700"
+            >
+              Go to Home
+            </Button>
             <Button 
               onClick={() => window.location.reload()} 
               className="w-full bg-blue-600 hover:bg-blue-700"
@@ -71,14 +102,28 @@ const AppRouter = () => {
     );
   }
 
-  // If user hasn't completed questionnaire, only allow questionnaire
+  // If user hasn't completed questionnaire, allow both questionnaire and home
   if (!user.hasCompletedQuestionnaire) {
-    console.log('User has not completed questionnaire, showing questionnaire or redirecting');
+    console.log('User has not completed questionnaire, showing questionnaire or allowing home access');
     return (
-      <Routes>
-        <Route path="/questionnaire" element={<Questionnaire />} />
-        <Route path="*" element={<Navigate to="/questionnaire" replace />} />
-      </Routes>
+      <div className="bg-[#171b22] min-h-screen flex w-full">
+        <SidebarProvider>
+          <AppSidebar />
+          <SidebarInset>
+            <div className="p-2">
+              <SidebarTrigger />
+            </div>
+            <main className="flex-1 p-6 bg-[#171b22] text-white min-h-screen rounded-lg shadow overflow-auto">
+              <Routes>
+                <Route path="/questionnaire" element={<Questionnaire />} />
+                <Route path="/" element={<Index />} />
+                <Route path="/profile" element={<Profile />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </main>
+          </SidebarInset>
+        </SidebarProvider>
+      </div>
     );
   }
 
